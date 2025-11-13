@@ -1,9 +1,8 @@
-// ─────────────────────────────────────────────────────────────────────────────
-//  ritual-script-v4-FIXED-ONLY-INSIDE-LOGO.js
-//  →  click-to-place works **only on logo cells** (mask + expansion)
-//  →  “Allow anywhere” button removed
-//  →  everything else (avatar, upload, celebration, debug) unchanged
-// ─────────────────────────────────────────────────────────────────────────────
+// ritual script v4 – FIXED: every cell inside the logo works
+// ------------------------------------------------------------
+//  • clicks only inside the logo (mask + expansion to 1000)
+//  • “Allow anywhere” removed
+//  • all other features unchanged
 
 const GRID_SIZE = 60;
 const CELL_PX = 15;
@@ -39,8 +38,6 @@ const celebrateEl        = document.getElementById('celebrate');
 const toggleMaskDebugBtn = document.getElementById('toggleMaskDebug');
 const autoTuneBtn        = document.getElementById('autoTune');
 
-// (allowAnywhereBtn is **removed** – we never allow outside the logo)
-
 // ── STORAGE ─────────────────────────────────────────────────────────────────
 function loadState(){ try{ const r=localStorage.getItem(STORAGE_KEY); if(r) pixels=JSON.parse(r); }catch(e){console.warn(e);} }
 function saveState(){ try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(pixels)); }catch(e){console.warn(e);} }
@@ -65,7 +62,7 @@ function buildGrid(){
   }
 }
 
-// ── CLICK HANDLER (ONLY INSIDE MASK) ───────────────────────────────────────
+// ── CLICK (ONLY INSIDE MASK) ───────────────────────────────────────────────
 function onCellClick(e){
   const idx = Number(e.currentTarget.dataset.idx);
   if(!maskComputed){ alert('Mask still computing — wait a second.'); return; }
@@ -74,7 +71,6 @@ function onCellClick(e){
   if(maskSet.has(idx)){
     openPlacementModalForIndex(idx);
   } else {
-    // optional: flash nearest allowed cell
     const nearest = findNearestMaskIndex(idx);
     if(nearest!==null) flashCell(nearest);
   }
@@ -204,16 +200,16 @@ async function computeMaskAndEnsureCapacity(threshold=28){
       }
     }
 
-    // 3. collect mask cells
+    // 3. collect **all** dilated cells
     for(let i=0;i<dilated.length;i++) if(dilated[i]) maskIndices.push(i);
 
-    // 4. expand to MAX_PARTICIPANTS (nearest to centre)
+    // 4. EXPAND to MAX_PARTICIPANTS – **use maskSet to avoid duplicates**
     if(maskIndices.length < MAX_PARTICIPANTS){
       const needed = MAX_PARTICIPANTS - maskIndices.length;
       const cx = (GRID_SIZE-1)/2, cy = (GRID_SIZE-1)/2;
       const cand = [];
       for(let i=0;i<GRID_SIZE*GRID_SIZE;i++){
-        if(dilated[i]) continue;
+        if(maskSet.has(i)) continue;               // <-- NEW: skip already-in-mask
         const gx=i%GRID_SIZE, gy=Math.floor(i/GRID_SIZE);
         const d = (gx-cx)**2 + (gy-cy)**2;
         cand.push({idx:i,d});
@@ -222,6 +218,7 @@ async function computeMaskAndEnsureCapacity(threshold=28){
       for(let i=0;i<needed&&i<cand.length;i++) maskIndices.push(cand[i].idx);
     }
 
+    // Build fast lookup set
     maskSet = new Set(maskIndices);
     maskComputed = true;
     renderGrid(); updateCounters();
