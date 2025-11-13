@@ -1,11 +1,12 @@
-// updated script: exact avatar placement per cell + view-only modal on filled cells
-// Keep GRID_SIZE and CELL_PX consistent with style.css (60, 15) or adjust both.
+// Restrict placements to logo mask only.
+// GRID_SIZE and CELL_PX must match your CSS (default 60 / 15)
 
 const GRID_SIZE = 60;
 const CELL_PX = 15;
-const STORAGE_KEY = 'ritual_pixels_final_v2';
+const STORAGE_KEY = 'ritual_pixels_masked';
 const LOGO_PATH = 'assets/logo/ritual-logo.png';
-const MAX_PARTICIPANTS = 1000;
+
+const MAX_PARTICIPANTS = 1000; // unused for expanding mask now; capacity = maskIndices.length
 
 let pixels = {}; // idx -> { username, caption, avatar (dataURL or remote) }
 let selectedIndex = null;
@@ -40,6 +41,7 @@ const filledPixelsEl = document.getElementById('filledPixels');
 
 const toggleMaskDebugBtn = document.getElementById('toggleMaskDebug');
 const autoTuneBtn = document.getElementById('autoTune');
+const toastEl = document.getElementById('toast');
 
 // ---------- storage ----------
 function loadState(){
@@ -47,7 +49,7 @@ function loadState(){
 }
 function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels)); } catch(e){ console.warn('saveState failed', e); } }
 
-// ---------- grid build (every cell clickable) ----------
+// ---------- grid build ----------
 function buildGrid(){
   gridContainer.style.width = (GRID_SIZE*CELL_PX)+'px';
   gridContainer.style.height = (GRID_SIZE*CELL_PX)+'px';
@@ -61,10 +63,20 @@ function buildGrid(){
       cell.style.width = CELL_PX + 'px';
       cell.style.height = CELL_PX + 'px';
       cell.style.pointerEvents = 'auto';
-      // click: open view if filled, else placement
       cell.addEventListener('click', (e)=>{
         const i = Number(e.currentTarget.dataset.idx);
-        if(pixels[i]) openViewModal(i); else openPlacementModalForIndex(i);
+        if(pixels[i]) {
+          openViewModal(i);
+        } else {
+          // only allow placement if inside mask
+          if(isMaskedIndex(i)) openPlacementModalForIndex(i);
+          else {
+            // show toast + flash nearest allowed cell (if any)
+            showToast('Only cells inside the ritual logo accept placements.');
+            const n = findNearestMaskIndex(i);
+            if(n !== null) flashCell(n);
+          }
+        }
       });
       cell.addEventListener('mousedown', (e)=> e.preventDefault());
       gridContainer.appendChild(cell);
@@ -72,7 +84,7 @@ function buildGrid(){
   }
 }
 
-// ---------- open placement modal ----------
+// ---------- placement modal ----------
 function openPlacementModalForIndex(idx){
   selectedIndex = idx;
   usernameInput.value = '';
@@ -83,18 +95,18 @@ function openPlacementModalForIndex(idx){
   modal.classList.remove('hidden');
   setTimeout(()=> usernameInput.focus(), 60);
 }
-closeModal.addEventListener('click', ()=> { modal.classList.add('hidden'); selectedIndex = null; });
+closeModal.addEventListener('click', ()=>{ modal.classList.add('hidden'); selectedIndex = null; });
 
 // ---------- place pixel ----------
 placeBtn.addEventListener('click', ()=>{
-  if(selectedIndex === null){ alert('Click a cell first to place.'); return; }
+  if(selectedIndex === null){ alert('Click an allowed cell inside the logo first.'); return; }
+  if(!isMaskedIndex(selectedIndex)){ alert('Sorry — that cell is no longer allowed.'); modal.classList.add('hidden'); selectedIndex = null; return; }
   if(pixels[selectedIndex]){ alert('That cell is already taken.'); modal.classList.add('hidden'); selectedIndex = null; return; }
   const u = usernameInput.value.trim();
   const avatarData = avatarPreview.dataset.dataurl || avatarPreview.dataset.url || null;
   if(!u && !avatarData) return alert('Enter X username or upload an avatar.');
   const c = captionInput.value.trim();
   const usernameStored = u || 'uploader';
-  // store avatar as dataURL if available (uploaded or converted), else keep remote URL
   pixels[selectedIndex] = { username: usernameStored, caption: c, avatar: avatarData || null, ts: Date.now() };
   saveState();
   renderGrid();
@@ -104,7 +116,7 @@ placeBtn.addEventListener('click', ()=>{
   selectedIndex = null;
 });
 
-// ---------- open view modal (read-only) ----------
+// ---------- view modal ----------
 function openViewModal(idx){
   const p = pixels[idx];
   if(!p) return;
@@ -112,12 +124,11 @@ function openViewModal(idx){
   viewHandle.textContent = p.username.startsWith('@') ? p.username : '@' + p.username;
   viewPledge.textContent = p.caption || '(no pledge)';
   viewModal.classList.remove('hidden');
-  // make sure user cannot edit (it's a view only)
 }
 viewClose.addEventListener('click', ()=> { viewModal.classList.add('hidden'); });
 
 // ---------- avatar fetch & upload ----------
-async function loadImageWithCors(url){
+function loadImageWithCors(url){
   return new Promise((resolve,reject)=>{
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -127,7 +138,6 @@ async function loadImageWithCors(url){
   });
 }
 
-// try fetch and convert to dataURL (preferred)
 async function tryFetchAvatarToDataURL(username){
   const avatarUrl = `https://unavatar.io/twitter/${encodeURIComponent(username)}.png`;
   try {
@@ -135,7 +145,6 @@ async function tryFetchAvatarToDataURL(username){
     const tmp = document.createElement('canvas');
     tmp.width = CELL_PX; tmp.height = CELL_PX;
     const ctx = tmp.getContext('2d');
-    // draw cover-style
     const ar = img.width / img.height;
     let sw = img.width, sh = img.height, sx = 0, sy = 0;
     if(ar > 1){ sh = img.height; sw = img.height * (tmp.width / tmp.height); sx = Math.round((img.width - sw) / 2); }
@@ -158,7 +167,6 @@ fetchAvatarBtn && fetchAvatarBtn.addEventListener('click', async ()=>{
     avatarName.textContent = '@' + u;
     avatarPreviewWrap.style.display = 'flex';
   } else {
-    // fallback preview remote url (will display as <img> but not usable for canvas)
     const fallback = `https://unavatar.io/twitter/${encodeURIComponent(u)}.png`;
     if(confirm('Avatar fetch to canvas failed (CORS). Use remote preview instead?')){
       avatarPreview.src = fallback;
@@ -172,7 +180,6 @@ fetchAvatarBtn && fetchAvatarBtn.addEventListener('click', async ()=>{
   }
 });
 
-// upload fallback (FileReader -> dataURL)
 avatarUploadInput && avatarUploadInput.addEventListener('change', (e)=>{
   const f = e.target.files && e.target.files[0]; if(!f) return;
   if(!f.type.startsWith('image/')) return alert('Please upload an image file.');
@@ -182,21 +189,18 @@ avatarUploadInput && avatarUploadInput.addEventListener('change', (e)=>{
 });
 removeAvatarBtn && removeAvatarBtn.addEventListener('click', ()=>{ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; avatarPreviewWrap.style.display='none'; avatarName.textContent=''; avatarUploadInput.value=''; });
 
-// ---------- render grid: use <img> inside cells for exact placement ----------
+// ---------- render uses <img> inside cells ----------
 function renderGrid(){
   for(const el of gridContainer.children){
     const idx = Number(el.dataset.idx);
-    // remove any old avatar element (we recreate / update)
     const existingImg = el.querySelector('.cell-avatar');
     if(pixels[idx]){
       const p = pixels[idx];
       el.classList.remove('empty'); el.classList.add('filled');
-      // ensure avatar img present and src set
       let img = existingImg;
       if(!img){
         img = document.createElement('img');
         img.className = 'cell-avatar';
-        // pointer-events none so clicks bubble to the cell (cell click opens view modal)
         img.style.pointerEvents = 'none';
         el.appendChild(img);
       }
@@ -206,22 +210,19 @@ function renderGrid(){
       el.classList.remove('filled'); el.classList.add('empty');
       if(existingImg) existingImg.remove();
       el.title = '';
-      // visual hint if inside mask (hoverable)
       if(isMaskedIndex(idx)) el.classList.add('hoverable'); else el.classList.remove('hoverable');
-      // debug outline
       if(maskDebug && isMaskedIndex(idx)) el.classList.add('mask-debug'); else el.classList.remove('mask-debug');
     }
   }
 }
 
-// counters
 function updateCounters(){
-  totalPixelsEl.textContent = Math.min(MAX_PARTICIPANTS, maskIndices.length || MAX_PARTICIPANTS);
+  totalPixelsEl.textContent = maskIndices.length;
   filledPixelsEl.textContent = Object.keys(pixels).length;
 }
 
-// ---------- mask compute (same luminance + dilation + expansion) ----------
-async function computeMaskAndEnsureCapacity(threshold = 28){
+// ---------- mask compute (luminance + dilation) - NO expansion ----------
+async function computeMask(threshold = 28){
   maskComputed = false; maskIndices = [];
   try {
     const img = await loadImageWithCors(LOGO_PATH);
@@ -246,7 +247,7 @@ async function computeMaskAndEnsureCapacity(threshold = 28){
       }
     }
 
-    // dilation
+    // dilation to fill thin strokes
     const dilated = new Uint8Array(map);
     const neighbors = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
     for(let gy=0; gy<GRID_SIZE; gy++){
@@ -264,42 +265,53 @@ async function computeMaskAndEnsureCapacity(threshold = 28){
 
     for(let i=0;i<dilated.length;i++) if(dilated[i]) maskIndices.push(i);
 
-    // expand to capacity
-    if(maskIndices.length < MAX_PARTICIPANTS){
-      const needed = MAX_PARTICIPANTS - maskIndices.length;
-      const present = new Set(maskIndices);
-      const centerX = (GRID_SIZE - 1) / 2, centerY = (GRID_SIZE - 1) / 2;
-      const distanceList = [];
-      for(let gy=0; gy<GRID_SIZE; gy++){
-        for(let gx=0; gx<GRID_SIZE; gx++){
-          const idx = gy*GRID_SIZE + gx;
-          if(present.has(idx)) continue;
-          const dx = gx - centerX, dy = gy - centerY;
-          const d = Math.sqrt(dx*dx + dy*dy);
-          distanceList.push({ idx, d });
-        }
-      }
-      distanceList.sort((a,b)=>a.d - b.d);
-      for(let i=0;i<needed && i<distanceList.length;i++) maskIndices.push(distanceList[i].idx);
-    }
-
+    // final sanity: if mask empty, fallback to center cluster
     if(maskIndices.length === 0){
-      maskIndices = Array.from({length: Math.min(GRID_SIZE*GRID_SIZE, MAX_PARTICIPANTS)}, (_,i)=>i);
-      console.warn('Mask empty -> fallback.');
+      const center = Math.floor((GRID_SIZE*GRID_SIZE)/2);
+      maskIndices = Array.from({length: Math.min(500, GRID_SIZE*GRID_SIZE)}, (_,i)=> (center + i) % (GRID_SIZE*GRID_SIZE));
+      console.warn('Mask was empty; using small fallback cluster.');
     }
 
     maskComputed = true;
     renderGrid(); updateCounters();
-    console.log('Mask computed cells:', maskIndices.length);
+    console.log('Mask computed (logo-only) cells:', maskIndices.length);
   } catch(err){
     console.warn('computeMask failed', err);
-    maskIndices = Array.from({length: Math.min(GRID_SIZE*GRID_SIZE, MAX_PARTICIPANTS)}, (_,i)=>i);
+    // fallback small cluster
+    maskIndices = Array.from({length: Math.min(400, GRID_SIZE*GRID_SIZE)}, (_,i)=>i);
     maskComputed = true;
     renderGrid(); updateCounters();
   }
 }
 
 function isMaskedIndex(idx){ return maskIndices.indexOf(idx) !== -1; }
+
+// ---------- helpers ----------
+function findNearestMaskIndex(idx){
+  if(!maskIndices || maskIndices.length === 0) return null;
+  const gy = Math.floor(idx / GRID_SIZE), gx = idx % GRID_SIZE;
+  let best = null, bestD = 1e9;
+  for(const m of maskIndices){
+    const my = Math.floor(m / GRID_SIZE), mx = m % GRID_SIZE;
+    const dx = mx - gx, dy = my - gy, d = dx*dx + dy*dy;
+    if(d < bestD){ bestD = d; best = m; }
+  }
+  return best;
+}
+
+function flashCell(idx){
+  const c = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
+  if(!c) return;
+  c.animate([{ boxShadow: '0 0 0 rgba(0,255,120,0.0)' }, { boxShadow: '0 0 18px rgba(0,255,120,0.28)' }, { boxShadow: '0 0 0 rgba(0,255,120,0.0)' }], { duration: 900, easing: 'ease-out' });
+}
+
+function showToast(text, ms = 1600){
+  toastEl.textContent = text;
+  toastEl.style.display = 'block';
+  toastEl.style.opacity = '1';
+  if(toastEl._t) clearTimeout(toastEl._t);
+  toastEl._t = setTimeout(()=>{ toastEl.style.opacity='0'; setTimeout(()=>toastEl.style.display='none',220); }, ms);
+}
 
 // ---------- celebration ----------
 function fireCelebration(idx){
@@ -317,22 +329,53 @@ function fireCelebration(idx){
 toggleMaskDebugBtn && toggleMaskDebugBtn.addEventListener('click', ()=>{ maskDebug = !maskDebug; renderGrid(); });
 
 autoTuneBtn && autoTuneBtn.addEventListener('click', async ()=>{
-  const candidates = [12,18,24,30,36,42,50];
+  const candidates = [12,18,24,30,36,42];
   let best = {thr:24, n:0};
   for(const t of candidates){
-    await computeMaskAndEnsureCapacity(t);
+    await computeMask(t);
     const n = maskIndices.length;
-    if(n > best.n && n <= MAX_PARTICIPANTS) best = {thr:t, n};
+    if(n > best.n) best = {thr:t, n};
     await new Promise(r=>setTimeout(r,80));
   }
   alert(`Auto-tune selected threshold ${best.thr} -> cells ${best.n}. Recomputing with that value.`);
-  await computeMaskAndEnsureCapacity(best.thr);
+  await computeMask(best.thr);
 });
+
+// ---------- render (img per cell) ----------
+function renderGrid(){
+  for(const el of gridContainer.children){
+    const idx = Number(el.dataset.idx);
+    const existingImg = el.querySelector('.cell-avatar');
+    if(pixels[idx]){
+      const p = pixels[idx];
+      el.classList.remove('empty'); el.classList.add('filled');
+      let img = existingImg;
+      if(!img){
+        img = document.createElement('img');
+        img.className = 'cell-avatar';
+        img.style.pointerEvents = 'none';
+        el.appendChild(img);
+      }
+      img.src = p.avatar || 'assets/decor/skull.png';
+      el.title = `${p.username}${p.caption ? ' — ' + p.caption : ''}`;
+    } else {
+      el.classList.remove('filled'); el.classList.add('empty');
+      if(existingImg) existingImg.remove();
+      el.title = '';
+      if(isMaskedIndex(idx)) el.classList.add('hoverable'); else el.classList.remove('hoverable');
+      if(maskDebug && isMaskedIndex(idx)) el.classList.add('mask-debug'); else el.classList.remove('mask-debug');
+    }
+  }
+}
+
+function updateCounters(){
+  totalPixelsEl.textContent = maskIndices.length;
+  filledPixelsEl.textContent = Object.keys(pixels).length;
+}
 
 // ---------- init ----------
 loadState();
 buildGrid();
-computeMaskAndEnsureCapacity();
+computeMask();   // logo-only mask
 renderGrid();
 updateCounters();
-
