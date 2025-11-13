@@ -8,46 +8,57 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet" />
 </head>
 <body>
-  <div id="app" class="app">
+  <div id="app" class="app ritual-theme">
     <aside class="sidebar">
+      <div class="brand">
+        <img src="assets/decor/skull.png" alt="skull" class="skull" />
+        <div class="title">Ritual</div>
+        <img src="assets/decor/candle.png" alt="candle" class="candle" />
+      </div>
+
       <div class="counter">
-        <div class="label">TOTAL PIXELS</div>
-        <div id="totalPixels" class="big">0</div>
+        <div class="label">TOTAL CAPACITY</div>
+        <div id="totalPixels" class="big">1000</div>
       </div>
       <div class="counter">
         <div class="label">PIXELS FILLED</div>
         <div id="filledPixels" class="big">0</div>
       </div>
-      <div class="hint">Click a glowing cell to place your pixel. Add X username & caption — your avatar will fill the cell.</div>
+
+      <div class="hint">Place your pixel, add X username & caption — be ritualised. Upload avatar or fetch from X.</div>
+      <div class="ritual-footer">Green flame. Black candle. Welcome.</div>
     </aside>
 
     <main class="canvas-wrap">
       <div class="board">
-        <!-- maskCanvas used to sample the logo (offscreen) -->
         <canvas id="maskCanvas" class="mask-canvas" width="800" height="800"></canvas>
-
-        <!-- gridContainer will contain cell elements; the logo overlay is a css background on grid -->
         <div id="gridContainer" class="grid"></div>
       </div>
     </main>
   </div>
 
-  <!-- Modal -->
+  <!-- Modal for placement -->
   <div id="modal" class="modal hidden">
     <div class="modal-inner">
       <button id="closeModal" class="close">×</button>
-      <h3>Place Your Pixel</h3>
+      <h3>Ritualise Yourself</h3>
 
       <label>X (Twitter) Username</label>
       <div style="display:flex;gap:8px;align-items:center">
         <input id="username" placeholder="yourXhandle (no @)" />
-        <button id="fetchAvatar" class="place" style="padding:8px 10px;font-size:13px">Fetch</button>
+        <button id="fetchAvatar" class="place small">Fetch</button>
       </div>
 
       <div id="avatarPreviewWrap" style="margin-top:10px;display:none;align-items:center;gap:10px">
         <img id="avatarPreview" alt="avatar preview" width="48" height="48" style="border-radius:8px;border:1px solid rgba(255,255,255,0.06)" />
-        <div id="avatarName" style="font-size:13px;color:#cfe3ff"></div>
+        <div style="display:flex;flex-direction:column">
+          <div id="avatarName" style="font-size:13px;color:#cfe3ff"></div>
+          <button id="removeAvatar" class="tertiary">Remove</button>
+        </div>
       </div>
+
+      <label style="margin-top:10px">Or upload avatar</label>
+      <input id="avatarUpload" type="file" accept="image/*" />
 
       <label>Caption</label>
       <textarea id="caption" placeholder="All in Ritual..."></textarea>
@@ -55,6 +66,15 @@
       <div class="modal-actions" style="margin-top:12px">
         <button id="placeBtn" class="place">Place Pixel</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Ritualised celebration -->
+  <div id="celebrate" class="celebrate hidden" aria-hidden="true">
+    <div class="celebrate-inner">
+      <div class="flame"></div>
+      <h1 class="ritualised">YOU ARE RITUALISED</h1>
+      <p class="sub">Welcome to the fold.</p>
     </div>
   </div>
 
