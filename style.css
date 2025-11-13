@@ -25,12 +25,17 @@ html,body,#app{height:100%;margin:0;background:linear-gradient(180deg,#020407 0%
 .hint{font-size:13px;color:rgba(180,255,200,0.6);margin-top:18px}
 .ritual-footer{font-size:12px;color:rgba(180,255,200,0.18);margin-top:20px}
 
+/* controls */
+.controls{margin-top:18px}
+.tertiary{background:#122024;border:0;color:#dfe;padding:8px 10px;border-radius:8px;cursor:pointer}
+.small-muted{font-size:12px;color:rgba(200,255,200,0.45);display:block;margin-bottom:8px}
+
 /* board/grid */
 .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:32px}
 .board{position:relative;width:900px;height:900px;background:#020408;border-radius:10px;padding:18px;box-shadow:0 30px 80px rgba(0,0,0,0.7)}
 .mask-canvas{display:none}
 
-/* logo overlay, larger so more pixels are inside */
+/* logo overlay */
 .grid{
   position:absolute;inset:18px;border-radius:6px;padding:0;background:linear-gradient(180deg,#020409,#051019);
   overflow:hidden;background-image: url('assets/logo/ritual-logo.png');background-repeat:no-repeat;background-position:center;background-size:82% 82%;
@@ -38,7 +43,7 @@ html,body,#app{height:100%;margin:0;background:linear-gradient(180deg,#020407 0%
   border:6px solid rgba(0,255,120,0.03);
 }
 
-/* cells */
+/* cells (GRID_SIZE=60, CELL_PX=15) */
 .cell{width:15px;height:15px;box-sizing:border-box;border:1px solid rgba(0,255,120,0.03);float:left;transition:box-shadow .14s, transform .08s;background-size:cover;background-position:center}
 .cell.hoverable{cursor:pointer}
 .cell.empty:hover{transform:scale(1.08);box-shadow:0 0 10px rgba(0,255,120,0.12)}
@@ -49,14 +54,13 @@ html,body,#app{height:100%;margin:0;background:linear-gradient(180deg,#020407 0%
 .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)}
 .modal.hidden{display:none}
 .modal-inner{width:520px;background:linear-gradient(180deg,#05121a,#041018);padding:22px;border-radius:12px;border:1px solid rgba(0,255,120,0.06);position:relative;box-shadow:0 10px 40px rgba(0,0,0,0.6)}
-.close{position:absolute;right:22px;top:18px;background:transparent;border:0;color:#fff;font-size:20px}
+.close{position:absolute;right:22px;top:18px;background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer}
 .modal-inner h3{margin:0 0 12px;color:var(--neon)}
 .modal-inner label{display:block;color:rgba(180,255,200,0.6);font-size:13px;margin-top:10px}
 .modal-inner input, .modal-inner textarea{width:100%;padding:10px;border-radius:8px;margin-top:6px;border:1px solid rgba(0,255,120,0.04);background:#06121a;color:#e9f2ff}
 .modal-actions{display:flex;justify-content:flex-end;margin-top:12px}
 .place{background:linear-gradient(90deg,#00ff88,#00c77a);border:0;color:#042014;padding:10px 16px;border-radius:10px;font-weight:700}
 .small{padding:8px 10px;font-size:13px}
-.tertiary{background:#122024;border:0;color:#dfe;}
 
 input[type="file"] { color: #dfe8f5; background: rgba(255,255,255,0.02); padding:8px; border-radius:8px; }
 
@@ -70,9 +74,11 @@ input[type="file"] { color: #dfe8f5; background: rgba(255,255,255,0.02); padding
 @keyframes rise{0%{transform:translateY(60px) scale(.9);opacity:0}100%{transform:translateY(0) scale(1);opacity:1}}
 .sub{color:rgba(200,255,210,0.8)}
 
+/* mask debug overlay (visible when toggled) */
+.cell.mask-debug { outline: 1px solid rgba(0, 255, 120, 0.18); background: rgba(0,255,120,0.02); }
+
 /* small responsive tweaks */
 @media (max-width:1000px){
   .sidebar{display:none}
   .board{width:92vw;height:92vw}
-  .cell{width:calc(92vw / 60);height:calc(92vw / 60)} /* responsive scaling */
 }
