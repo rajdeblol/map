@@ -1,13 +1,13 @@
-// ritual final - every cell clickable (mask visual only)
-// GRID_SIZE and CELL_PX must match CSS (60 / 15) unless you change CSS accordingly.
+// updated script: exact avatar placement per cell + view-only modal on filled cells
+// Keep GRID_SIZE and CELL_PX consistent with style.css (60, 15) or adjust both.
 
 const GRID_SIZE = 60;
 const CELL_PX = 15;
-const STORAGE_KEY = 'ritual_pixels_final';
+const STORAGE_KEY = 'ritual_pixels_final_v2';
 const LOGO_PATH = 'assets/logo/ritual-logo.png';
 const MAX_PARTICIPANTS = 1000;
 
-let pixels = {}; // idx -> { username, caption, avatar (dataURL) }
+let pixels = {}; // idx -> { username, caption, avatar (dataURL or remote) }
 let selectedIndex = null;
 let maskIndices = [];
 let maskComputed = false;
@@ -15,22 +15,29 @@ let maskDebug = false;
 
 const gridContainer = document.getElementById('gridContainer');
 const maskCanvas = document.getElementById('maskCanvas');
+
 const modal = document.getElementById('modal');
 const usernameInput = document.getElementById('username');
 const captionInput = document.getElementById('caption');
 const placeBtn = document.getElementById('placeBtn');
 const closeModal = document.getElementById('closeModal');
-const totalPixelsEl = document.getElementById('totalPixels');
-const filledPixelsEl = document.getElementById('filledPixels');
-
-const fetchAvatarBtn = document.getElementById('fetchAvatar');
 const avatarPreviewWrap = document.getElementById('avatarPreviewWrap');
 const avatarPreview = document.getElementById('avatarPreview');
 const avatarName = document.getElementById('avatarName');
-const removeAvatarBtn = document.getElementById('removeAvatar');
+const fetchAvatarBtn = document.getElementById('fetchAvatar');
 const avatarUploadInput = document.getElementById('avatarUpload');
+const removeAvatarBtn = document.getElementById('removeAvatar');
+
+const viewModal = document.getElementById('viewModal');
+const viewAvatar = document.getElementById('viewAvatar');
+const viewHandle = document.getElementById('viewHandle');
+const viewPledge = document.getElementById('viewPledge');
+const viewClose = document.getElementById('viewClose');
 
 const celebrateEl = document.getElementById('celebrate');
+const totalPixelsEl = document.getElementById('totalPixels');
+const filledPixelsEl = document.getElementById('filledPixels');
+
 const toggleMaskDebugBtn = document.getElementById('toggleMaskDebug');
 const autoTuneBtn = document.getElementById('autoTune');
 
@@ -38,9 +45,9 @@ const autoTuneBtn = document.getElementById('autoTune');
 function loadState(){
   try { const raw = localStorage.getItem(STORAGE_KEY); if(raw) pixels = JSON.parse(raw); } catch(e){ console.warn('loadState failed', e); }
 }
-function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels)); } catch(e){ console.warn('saveState', e); } }
+function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels)); } catch(e){ console.warn('saveState failed', e); } }
 
-// ---------- build grid ----------
+// ---------- grid build (every cell clickable) ----------
 function buildGrid(){
   gridContainer.style.width = (GRID_SIZE*CELL_PX)+'px';
   gridContainer.style.height = (GRID_SIZE*CELL_PX)+'px';
@@ -51,19 +58,21 @@ function buildGrid(){
       const cell = document.createElement('div');
       cell.className = 'cell empty';
       cell.dataset.idx = idx;
-      cell.style.width = CELL_PX+'px';
-      cell.style.height = CELL_PX+'px';
+      cell.style.width = CELL_PX + 'px';
+      cell.style.height = CELL_PX + 'px';
       cell.style.pointerEvents = 'auto';
-      // IMPORTANT: every cell opens modal on click (no silent rejection)
-      cell.addEventListener('click', ()=> openPlacementModalForIndex(idx) );
-      // prevent selection
+      // click: open view if filled, else placement
+      cell.addEventListener('click', (e)=>{
+        const i = Number(e.currentTarget.dataset.idx);
+        if(pixels[i]) openViewModal(i); else openPlacementModalForIndex(i);
+      });
       cell.addEventListener('mousedown', (e)=> e.preventDefault());
       gridContainer.appendChild(cell);
     }
   }
 }
 
-// ---------- open modal for any index ----------
+// ---------- open placement modal ----------
 function openPlacementModalForIndex(idx){
   selectedIndex = idx;
   usernameInput.value = '';
@@ -72,19 +81,20 @@ function openPlacementModalForIndex(idx){
   avatarPreview.dataset.dataurl = '';
   avatarPreview.dataset.url = '';
   modal.classList.remove('hidden');
-  setTimeout(()=> usernameInput.focus(), 80);
+  setTimeout(()=> usernameInput.focus(), 60);
 }
-closeModal.addEventListener('click', ()=>{ modal.classList.add('hidden'); selectedIndex = null; });
+closeModal.addEventListener('click', ()=> { modal.classList.add('hidden'); selectedIndex = null; });
 
 // ---------- place pixel ----------
 placeBtn.addEventListener('click', ()=>{
-  if(selectedIndex === null){ alert('No cell selected. Click a cell first.'); return; }
-  if(pixels[selectedIndex]){ alert('That pixel is already placed. Choose another.'); modal.classList.add('hidden'); selectedIndex = null; return; }
+  if(selectedIndex === null){ alert('Click a cell first to place.'); return; }
+  if(pixels[selectedIndex]){ alert('That cell is already taken.'); modal.classList.add('hidden'); selectedIndex = null; return; }
   const u = usernameInput.value.trim();
-  const avatarData = avatarPreview.dataset.dataurl || null;
-  if(!u && !avatarData) return alert('Add a username or upload an avatar.');
+  const avatarData = avatarPreview.dataset.dataurl || avatarPreview.dataset.url || null;
+  if(!u && !avatarData) return alert('Enter X username or upload an avatar.');
   const c = captionInput.value.trim();
   const usernameStored = u || 'uploader';
+  // store avatar as dataURL if available (uploaded or converted), else keep remote URL
   pixels[selectedIndex] = { username: usernameStored, caption: c, avatar: avatarData || null, ts: Date.now() };
   saveState();
   renderGrid();
@@ -94,7 +104,30 @@ placeBtn.addEventListener('click', ()=>{
   selectedIndex = null;
 });
 
+// ---------- open view modal (read-only) ----------
+function openViewModal(idx){
+  const p = pixels[idx];
+  if(!p) return;
+  viewAvatar.src = p.avatar || 'assets/decor/skull.png';
+  viewHandle.textContent = p.username.startsWith('@') ? p.username : '@' + p.username;
+  viewPledge.textContent = p.caption || '(no pledge)';
+  viewModal.classList.remove('hidden');
+  // make sure user cannot edit (it's a view only)
+}
+viewClose.addEventListener('click', ()=> { viewModal.classList.add('hidden'); });
+
 // ---------- avatar fetch & upload ----------
+async function loadImageWithCors(url){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=> resolve(img);
+    img.onerror = ()=> reject(new Error('Image load error: ' + url));
+    img.src = url + ((url.indexOf('?') === -1) ? '?v=' + Date.now() : '&v=' + Date.now());
+  });
+}
+
+// try fetch and convert to dataURL (preferred)
 async function tryFetchAvatarToDataURL(username){
   const avatarUrl = `https://unavatar.io/twitter/${encodeURIComponent(username)}.png`;
   try {
@@ -102,14 +135,15 @@ async function tryFetchAvatarToDataURL(username){
     const tmp = document.createElement('canvas');
     tmp.width = CELL_PX; tmp.height = CELL_PX;
     const ctx = tmp.getContext('2d');
+    // draw cover-style
     const ar = img.width / img.height;
     let sw = img.width, sh = img.height, sx = 0, sy = 0;
-    if(ar > 1){ sh = img.height; sw = img.height * (tmp.width / tmp.height); sx = Math.round((img.width - sw)/2); }
-    else { sw = img.width; sh = img.width * (tmp.height / tmp.width); sy = Math.round((img.height - sh)/2); }
+    if(ar > 1){ sh = img.height; sw = img.height * (tmp.width / tmp.height); sx = Math.round((img.width - sw) / 2); }
+    else { sw = img.width; sh = img.width * (tmp.height / tmp.width); sy = Math.round((img.height - sh) / 2); }
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, tmp.width, tmp.height);
     return tmp.toDataURL('image/png');
   } catch(err){
-    console.warn('Avatar proxy->canvas failed', err);
+    console.warn('Avatar fetch->canvas failed', err);
     return null;
   }
 }
@@ -124,21 +158,21 @@ fetchAvatarBtn && fetchAvatarBtn.addEventListener('click', async ()=>{
     avatarName.textContent = '@' + u;
     avatarPreviewWrap.style.display = 'flex';
   } else {
-    // fallback: attempt remote preview (might be blocked for canvas usage but will display as <img>)
-    const fallbackUrl = `https://unavatar.io/twitter/${encodeURIComponent(u)}.png`;
-    if(confirm('Avatar fetch to canvas failed (CORS). Use preview from remote URL instead?')){
-      avatarPreview.src = fallbackUrl;
+    // fallback preview remote url (will display as <img> but not usable for canvas)
+    const fallback = `https://unavatar.io/twitter/${encodeURIComponent(u)}.png`;
+    if(confirm('Avatar fetch to canvas failed (CORS). Use remote preview instead?')){
+      avatarPreview.src = fallback;
       avatarPreview.dataset.dataurl = '';
-      avatarPreview.dataset.url = fallbackUrl;
+      avatarPreview.dataset.url = fallback;
       avatarName.textContent = '@' + u;
       avatarPreviewWrap.style.display = 'flex';
     } else {
-      alert('You can upload an image instead.');
+      alert('You can upload instead.');
     }
   }
 });
 
-// upload file -> dataURL
+// upload fallback (FileReader -> dataURL)
 avatarUploadInput && avatarUploadInput.addEventListener('change', (e)=>{
   const f = e.target.files && e.target.files[0]; if(!f) return;
   if(!f.type.startsWith('image/')) return alert('Please upload an image file.');
@@ -148,42 +182,45 @@ avatarUploadInput && avatarUploadInput.addEventListener('change', (e)=>{
 });
 removeAvatarBtn && removeAvatarBtn.addEventListener('click', ()=>{ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; avatarPreviewWrap.style.display='none'; avatarName.textContent=''; avatarUploadInput.value=''; });
 
-// helper: load image with crossOrigin
-function loadImageWithCors(url){
-  return new Promise((resolve,reject)=>{
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = ()=> resolve(img);
-    img.onerror = ()=> reject(new Error('Image load error: '+url));
-    img.src = url + ((url.indexOf('?')===-1)?'?v='+Date.now():'&v='+Date.now());
-  });
-}
-
-// ---------- render ----------
+// ---------- render grid: use <img> inside cells for exact placement ----------
 function renderGrid(){
   for(const el of gridContainer.children){
     const idx = Number(el.dataset.idx);
+    // remove any old avatar element (we recreate / update)
+    const existingImg = el.querySelector('.cell-avatar');
     if(pixels[idx]){
       const p = pixels[idx];
       el.classList.remove('empty'); el.classList.add('filled');
-      if(p.avatar){ el.style.backgroundImage = `url("${p.avatar}")`; el.classList.add('filled-avatar'); }
-      else { el.style.backgroundImage = ''; el.classList.remove('filled-avatar'); el.style.backgroundColor = '#dfffe8'; }
-      el.title = `${p.username}${p.caption? ' — '+p.caption : ''}`;
+      // ensure avatar img present and src set
+      let img = existingImg;
+      if(!img){
+        img = document.createElement('img');
+        img.className = 'cell-avatar';
+        // pointer-events none so clicks bubble to the cell (cell click opens view modal)
+        img.style.pointerEvents = 'none';
+        el.appendChild(img);
+      }
+      img.src = p.avatar || 'assets/decor/skull.png';
+      el.title = `${p.username}${p.caption ? ' — ' + p.caption : ''}`;
     } else {
-      // mark hoverable if inside mask (visual help), but all cells are clickable
+      el.classList.remove('filled'); el.classList.add('empty');
+      if(existingImg) existingImg.remove();
+      el.title = '';
+      // visual hint if inside mask (hoverable)
       if(isMaskedIndex(idx)) el.classList.add('hoverable'); else el.classList.remove('hoverable');
-      el.classList.remove('filled'); el.classList.remove('filled-avatar'); el.classList.add('empty'); el.style.backgroundImage=''; el.style.backgroundColor='transparent'; el.title='';
+      // debug outline
       if(maskDebug && isMaskedIndex(idx)) el.classList.add('mask-debug'); else el.classList.remove('mask-debug');
     }
   }
 }
 
+// counters
 function updateCounters(){
   totalPixelsEl.textContent = Math.min(MAX_PARTICIPANTS, maskIndices.length || MAX_PARTICIPANTS);
   filledPixelsEl.textContent = Object.keys(pixels).length;
 }
 
-// ---------- mask compute (luminance + dilation + expansion) ----------
+// ---------- mask compute (same luminance + dilation + expansion) ----------
 async function computeMaskAndEnsureCapacity(threshold = 28){
   maskComputed = false; maskIndices = [];
   try {
@@ -194,8 +231,8 @@ async function computeMaskAndEnsureCapacity(threshold = 28){
 
     const ar = img.width / img.height;
     let dw = tiny.width, dh = tiny.height, dx = 0, dy = 0;
-    if(ar > 1){ dw = tiny.width; dh = Math.round(tiny.width / ar); dy = Math.round((tiny.height - dh)/2); }
-    else { dh = tiny.height; dw = Math.round(tiny.height * ar); dx = Math.round((tiny.width - dw)/2); }
+    if(ar > 1){ dw = tiny.width; dh = Math.round(tiny.width / ar); dy = Math.round((tiny.height - dh) / 2); }
+    else { dh = tiny.height; dw = Math.round(tiny.height * ar); dx = Math.round((tiny.width - dw) / 2); }
     tctx.drawImage(img, dx, dy, dw, dh);
 
     const imgData = tctx.getImageData(0,0,tiny.width,tiny.height).data;
@@ -264,29 +301,20 @@ async function computeMaskAndEnsureCapacity(threshold = 28){
 
 function isMaskedIndex(idx){ return maskIndices.indexOf(idx) !== -1; }
 
-// ---------- helpers ----------
-function flashCell(idx){
-  const c = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
-  if(!c) return;
-  c.animate([{ boxShadow: '0 0 0 rgba(0,255,120,0.0)' }, { boxShadow: '0 0 18px rgba(0,255,120,0.28)' }, { boxShadow: '0 0 0 rgba(0,255,120,0.0)' }], { duration: 900, easing: 'ease-out' });
-}
-
-// celebration
+// ---------- celebration ----------
 function fireCelebration(idx){
   const cell = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
   if(cell){
-    cell.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 700, easing: 'ease-out' });
+    cell.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.2)' }, { transform: 'scale(1)' }], { duration: 650, easing: 'ease-out' });
     cell.style.boxShadow = '0 0 28px rgba(0,255,120,0.25)';
-    setTimeout(()=>{ cell.style.boxShadow = ''; }, 1000);
+    setTimeout(()=>{ cell.style.boxShadow = ''; }, 1100);
   }
-  celebrateEl.classList.remove('hidden'); celebrateEl.setAttribute('aria-hidden', 'false');
+  celebrateEl.classList.remove('hidden'); celebrateEl.setAttribute('aria-hidden','false');
   setTimeout(()=>{ celebrateEl.classList.add('hidden'); celebrateEl.setAttribute('aria-hidden','true'); }, 2600);
 }
 
-// debug controls
-toggleMaskDebugBtn && toggleMaskDebugBtn.addEventListener('click', ()=>{
-  maskDebug = !maskDebug; renderGrid();
-});
+// ---------- debug controls ----------
+toggleMaskDebugBtn && toggleMaskDebugBtn.addEventListener('click', ()=>{ maskDebug = !maskDebug; renderGrid(); });
 
 autoTuneBtn && autoTuneBtn.addEventListener('click', async ()=>{
   const candidates = [12,18,24,30,36,42,50];
@@ -301,9 +329,10 @@ autoTuneBtn && autoTuneBtn.addEventListener('click', async ()=>{
   await computeMaskAndEnsureCapacity(best.thr);
 });
 
-// init
+// ---------- init ----------
 loadState();
 buildGrid();
 computeMaskAndEnsureCapacity();
 renderGrid();
 updateCounters();
+
