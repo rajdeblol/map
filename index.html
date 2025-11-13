@@ -7,32 +7,25 @@
   <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet" />
   <style>
-    /* avatar in-cell + view modal minimal styles */
+    /* small fixes for modal overlay behavior and view modal */
     .cell { position: relative; overflow: hidden; }
     .cell .cell-avatar { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; border-radius:2px; pointer-events:none; }
     .cell.filled { border: 1px solid rgba(0,255,120,0.12); }
+    /* view modal overlay (centered card) */
     .view-modal { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); z-index:120; }
-    .view-inner { width:360px; background:linear-gradient(180deg,#041219,#031018); padding:18px; border-radius:12px; border:1px solid rgba(0,255,120,0.06); color:#e5fff0; box-shadow:0 20px 60px rgba(0,0,0,0.7) }
+    .view-modal.hidden { display:none; }
+    .view-inner { width:360px; max-width:92vw; background:linear-gradient(180deg,#041219,#031018); padding:18px; border-radius:12px; border:1px solid rgba(0,255,120,0.06); color:#e5fff0; box-shadow:0 20px 60px rgba(0,0,0,0.7); position:relative; }
     .view-inner h4 { margin:0 0 8px; color:#7fff9a; }
     .view-row { display:flex; gap:10px; align-items:center; margin-top:12px; }
     .view-avatar { width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid rgba(255,255,255,0.06) }
     .view-text { font-size:14px; color:#cfeee0 }
-    .view-close { position:absolute; right:18px; top:14px; background:transparent; border:0; color:#fff; font-size:20px; cursor:pointer }
-    .toast {
-      position: fixed;
-      left: 50%;
-      transform: translateX(-50%);
-      bottom: 26px;
-      background: rgba(0,0,0,0.7);
-      color: #dfffe8;
-      padding: 10px 14px;
-      border-radius: 999px;
-      font-family: inherit;
-      font-size: 13px;
-      z-index: 200;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.6);
-      display: none;
-    }
+    .view-close { position:absolute; right:12px; top:10px; background:transparent; border:0; color:#cfeee0; font-size:20px; cursor:pointer }
+    /* pack placement modal overlay similarly */
+    .modal { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); z-index:130; }
+    .modal.hidden { display:none; }
+    .modal-inner { width:520px; max-width:94vw; background:linear-gradient(180deg,#05121a,#041018); padding:22px; border-radius:12px; border:1px solid rgba(0,255,120,0.06); position:relative; box-shadow:0 10px 40px rgba(0,0,0,0.6) }
+    .close { position:absolute; right:14px; top:10px; background:transparent; border:0; color:#fff; font-size:20px; cursor:pointer }
+    .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 26px; background: rgba(0,0,0,0.7); color: #dfffe8; padding: 10px 14px; border-radius: 999px; font-family: inherit; font-size: 13px; z-index: 200; box-shadow: 0 8px 30px rgba(0,0,0,0.6); display: none; }
   </style>
 </head>
 <body>
@@ -74,8 +67,8 @@
 
   <!-- Placement Modal -->
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="placeTitle">
-    <div class="modal-inner">
-      <button id="closeModal" class="close">×</button>
+    <div class="modal-inner" role="document">
+      <button id="closeModal" class="close" aria-label="close placement">×</button>
       <h3 id="placeTitle">Ritualise Yourself</h3>
 
       <label>X (Twitter) Username</label>
@@ -106,8 +99,8 @@
 
   <!-- View-only modal -->
   <div id="viewModal" class="view-modal hidden" role="dialog" aria-modal="true" aria-labelledby="viewTitle">
-    <div class="view-inner" id="viewInner">
-      <button id="viewClose" class="view-close">×</button>
+    <div class="view-inner" role="document">
+      <button id="viewClose" class="view-close" aria-label="close view">×</button>
       <h4 id="viewTitle">Ritual Member</h4>
       <div class="view-row">
         <img id="viewAvatar" class="view-avatar" src="" alt="avatar" />
@@ -128,7 +121,7 @@
     </div>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" aria-hidden="true"></div>
 
   <script src="script.js"></script>
 </body>
