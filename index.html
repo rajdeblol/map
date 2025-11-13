@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ritual Pixel Portal</title>
-  <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet" />
 </head>
 <body>
   <div id="app" class="app">
@@ -18,14 +18,15 @@
         <div class="label">PIXELS FILLED</div>
         <div id="filledPixels" class="big">0</div>
       </div>
-      <div class="hint">Click a glowing cell to place your pixel. Add Twitter username + caption.</div>
+      <div class="hint">Click a glowing cell to place your pixel. Add X username & caption — your avatar will fill the cell.</div>
     </aside>
 
     <main class="canvas-wrap">
       <div class="board">
-        <!-- maskCanvas is used to sample the logo transparency and create the mask -->
+        <!-- maskCanvas used to sample the logo (offscreen) -->
         <canvas id="maskCanvas" class="mask-canvas" width="800" height="800"></canvas>
-        <!-- gridContainer will contain individual cell elements -->
+
+        <!-- gridContainer will contain cell elements; the logo overlay is a css background on grid -->
         <div id="gridContainer" class="grid"></div>
       </div>
     </main>
@@ -36,11 +37,22 @@
     <div class="modal-inner">
       <button id="closeModal" class="close">×</button>
       <h3>Place Your Pixel</h3>
-      <label>Twitter Username</label>
-      <input id="username" placeholder="yourhandle" />
+
+      <label>X (Twitter) Username</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="username" placeholder="yourXhandle (no @)" />
+        <button id="fetchAvatar" class="place" style="padding:8px 10px;font-size:13px">Fetch</button>
+      </div>
+
+      <div id="avatarPreviewWrap" style="margin-top:10px;display:none;align-items:center;gap:10px">
+        <img id="avatarPreview" alt="avatar preview" width="48" height="48" style="border-radius:8px;border:1px solid rgba(255,255,255,0.06)" />
+        <div id="avatarName" style="font-size:13px;color:#cfe3ff"></div>
+      </div>
+
       <label>Caption</label>
       <textarea id="caption" placeholder="All in Ritual..."></textarea>
-      <div class="modal-actions">
+
+      <div class="modal-actions" style="margin-top:12px">
         <button id="placeBtn" class="place">Place Pixel</button>
       </div>
     </div>
