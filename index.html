@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ritual Pixel Portal — working grid</title>
+  <title>Ritual Pixel Portal — aligned grid</title>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet" />
   <style>
     :root { --bg:#03050a; --panel:#07151a; --neon:#7fff9a; --cell-size:15px; --grid-size:60; }
@@ -16,41 +16,45 @@
     .counter .big{font-size:40px;color:var(--neon);font-weight:700;margin-top:6px}
     .hint{font-size:13px;color:rgba(180,255,200,0.6);margin-top:18px}
 
-    /* board */
     .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:32px}
     .board{position:relative;width:880px;height:880px;background:#02040a;border-radius:8px;padding:14px;box-shadow:0 30px 80px rgba(0,0,0,0.6)}
-    /* grid is CSS grid so cells are aligned and visible */
+
+    /* Container that holds the logo image + the grid stacked exactly */
+    .grid-wrap{position:relative;margin:auto;width: calc(var(--grid-size) * var(--cell-size)); height: calc(var(--grid-size) * var(--cell-size));}
+
+    /* logo image behind grid — object-fit:contain so we control scaling consistently */
+    #logoImg{
+      position:absolute; inset:0; width:100%; height:100%;
+      object-fit:contain; display:block; z-index:0; pointer-events:none;
+      filter: brightness(.65);
+    }
+
+    /* CSS grid exactly aligned to logo dimensions */
     .grid{
       --cols: 60;
-      width: calc(var(--cols) * var(--cell-size));
-      height: calc(var(--cols) * var(--cell-size));
-      display: grid;
+      width:100%;
+      height:100%;
+      display:grid;
       grid-template-columns: repeat(var(--cols), var(--cell-size));
       grid-auto-rows: var(--cell-size);
-      position:relative;
-      margin:auto;
-      background-image: url('assets/logo/ritual-logo.png');
-      background-repeat:no-repeat;
-      background-position:center;
-      background-size:78% 78%;
-      box-shadow: inset 0 0 0 9999px rgba(0,0,0,0.6);
-      border:6px solid rgba(0,255,120,0.02);
+      position:absolute; left:0; top:0; z-index:1;
+      box-shadow: inset 0 0 0 9999px rgba(0,0,0,0.2);
+      border:2px solid rgba(0,255,120,0.02);
     }
 
     .cell{
       width:var(--cell-size); height:var(--cell-size); box-sizing:border-box;
       border:1px solid rgba(0,255,120,0.03); background:transparent; position:relative;
       transition: transform .08s, box-shadow .12s;
+      overflow:hidden;
     }
     .cell.hoverable{cursor:pointer}
-    .cell.empty:hover{transform:scale(1.08); box-shadow:0 0 10px rgba(0,255,120,0.08)}
+    .cell.empty:hover{transform:scale(1.06); box-shadow:0 0 10px rgba(0,255,120,0.06)}
     .cell.filled{border:1px solid rgba(0,255,120,0.12)}
-    .cell .cell-avatar{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:2px;pointer-events:none}
+    .cell .cell-avatar{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:2px;pointer-events:none;display:block}
 
-    /* mask debug */
-    .mask-debug { outline: 1px solid rgba(0,255,120,0.16); background: rgba(0,255,120,0.02); }
+    .mask-debug{outline:1px solid rgba(0,255,120,0.12); background:rgba(0,255,120,0.02)}
 
-    /* modal */
     .modal, .view-modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:200}
     .modal.hidden, .view-modal.hidden{display:none}
     .modal-inner, .view-inner { background: linear-gradient(180deg,#041219,#031018); padding:20px;border-radius:12px;border:1px solid rgba(0,255,120,0.06); width:480px; max-width:94vw; color:#e8fff0; position:relative }
@@ -58,7 +62,6 @@
     input, textarea { width:100%; padding:10px;border-radius:8px;border:1px solid rgba(0,255,120,0.05); background:#071621; color:#e8fff0; margin-top:8px }
     .place{background:linear-gradient(90deg,#00ff88,#00c77a);border:0;color:#042014;padding:10px 16px;border-radius:10px;font-weight:700;cursor:pointer}
 
-    /* toast */
     .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 26px; background: rgba(0,0,0,0.7); color: #dfffe8; padding: 10px 14px; border-radius: 999px; font-family: inherit; font-size: 13px; z-index: 300; display:none }
   </style>
 </head>
@@ -87,7 +90,13 @@
 
     <main class="canvas-wrap">
       <div class="board">
-        <div id="gridContainer" class="grid" style="--cols:60; --cell-size:15px;"></div>
+        <div class="grid-wrap" style="--grid-size:60; --cell-size:15px;">
+          <!-- logo image placed behind the grid; scaled/positioned to match mask computation -->
+          <img id="logoImg" src="assets/logo/ritual-logo.png" alt="logo" />
+
+          <!-- grid of cells on top -->
+          <div id="gridContainer" class="grid" style="--cols:60; --cell-size:15px;"></div>
+        </div>
       </div>
     </main>
   </div>
