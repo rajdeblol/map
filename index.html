@@ -7,28 +7,32 @@
   <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet" />
   <style>
-    /* new small styles for exact avatar placement and view modal */
+    /* avatar in-cell + view modal minimal styles */
     .cell { position: relative; overflow: hidden; }
-    .cell .cell-avatar {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-      border-radius: 2px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.45) inset;
-      transform-origin: center;
-    }
+    .cell .cell-avatar { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; border-radius:2px; pointer-events:none; }
     .cell.filled { border: 1px solid rgba(0,255,120,0.12); }
-    /* view-only modal */
     .view-modal { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); z-index:120; }
     .view-inner { width:360px; background:linear-gradient(180deg,#041219,#031018); padding:18px; border-radius:12px; border:1px solid rgba(0,255,120,0.06); color:#e5fff0; box-shadow:0 20px 60px rgba(0,0,0,0.7) }
-    .view-inner h4 { margin:0 0 8px; color:var(--neon); }
+    .view-inner h4 { margin:0 0 8px; color:#7fff9a; }
     .view-row { display:flex; gap:10px; align-items:center; margin-top:12px; }
     .view-avatar { width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid rgba(255,255,255,0.06) }
     .view-text { font-size:14px; color:#cfeee0 }
     .view-close { position:absolute; right:18px; top:14px; background:transparent; border:0; color:#fff; font-size:20px; cursor:pointer }
+    .toast {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 26px;
+      background: rgba(0,0,0,0.7);
+      color: #dfffe8;
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-family: inherit;
+      font-size: 13px;
+      z-index: 200;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -41,15 +45,15 @@
       </div>
 
       <div class="counter">
-        <div class="label">TOTAL CAPACITY</div>
-        <div id="totalPixels" class="big">1000</div>
+        <div class="label">TOTAL PIXELS</div>
+        <div id="totalPixels" class="big">0</div>
       </div>
       <div class="counter">
         <div class="label">PIXELS FILLED</div>
         <div id="filledPixels" class="big">0</div>
       </div>
 
-      <div class="hint">Click any cell to place. Click a filled cell to view the user & their pledge.</div>
+      <div class="hint">Only cells inside the ritual logo accept new placements. Click a filled cell to view its pledge.</div>
 
       <div class="controls">
         <label class="small-muted">Debug mask</label>
@@ -68,7 +72,7 @@
     </main>
   </div>
 
-  <!-- Placement Modal (editable only when placing) -->
+  <!-- Placement Modal -->
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="placeTitle">
     <div class="modal-inner">
       <button id="closeModal" class="close">×</button>
@@ -100,7 +104,7 @@
     </div>
   </div>
 
-  <!-- View-only modal (shows username & pledge; non-editable) -->
+  <!-- View-only modal -->
   <div id="viewModal" class="view-modal hidden" role="dialog" aria-modal="true" aria-labelledby="viewTitle">
     <div class="view-inner" id="viewInner">
       <button id="viewClose" class="view-close">×</button>
@@ -115,7 +119,7 @@
     </div>
   </div>
 
-  <!-- Celebration (same) -->
+  <!-- Celebration -->
   <div id="celebrate" class="celebrate hidden" aria-hidden="true">
     <div class="celebrate-inner">
       <div class="flame"></div>
@@ -123,6 +127,8 @@
       <p class="sub">Welcome to the fold.</p>
     </div>
   </div>
+
+  <div id="toast" class="toast"></div>
 
   <script src="script.js"></script>
 </body>
