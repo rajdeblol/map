@@ -1,108 +1,96 @@
-// Modal-fix version: better modal close/escape/overlay handling + defensive guards
+// ritual final: visible CSS-grid, logo-only mask, in-cell avatars, counters
 const GRID_SIZE = 60;
 const CELL_PX = 15;
-const STORAGE_KEY = 'ritual_pixels_masked';
+const STORAGE_KEY = 'ritual_pixels_final_grid';
 const LOGO_PATH = 'assets/logo/ritual-logo.png';
 
-let pixels = {}; // idx -> { username, caption, avatar }
-let maskIndices = [];
+let pixels = {};             // idx -> { username, caption, avatar }
+let maskIndices = [];        // allowed cells (logo-only)
 let maskComputed = false;
 let maskDebug = false;
 
-// DOM helpers (defensive: some elements may be missing)
-const $ = id => document.getElementById(id);
-const gridContainer = $('gridContainer');
-const modal = $('modal');
-const closeModal = $('closeModal');
-const usernameInput = $('username');
-const captionInput = $('caption');
-const placeBtn = $('placeBtn');
-const avatarPreviewWrap = $('avatarPreviewWrap');
-const avatarPreview = $('avatarPreview');
-const avatarName = $('avatarName');
-const fetchAvatarBtn = $('fetchAvatar');
-const avatarUploadInput = $('avatarUpload');
-const removeAvatarBtn = $('removeAvatar');
+const gridContainer = document.getElementById('gridContainer');
+const totalPixelsEl = document.getElementById('totalPixels');
+const filledPixelsEl = document.getElementById('filledPixels');
+const toastEl = document.getElementById('toast');
 
-const viewModal = $('viewModal');
-const viewClose = $('viewClose');
-const viewAvatar = $('viewAvatar');
-const viewHandle = $('viewHandle');
-const viewPledge = $('viewPledge');
+const modal = document.getElementById('modal');
+const closeModal = document.getElementById('closeModal');
+const usernameInput = document.getElementById('username');
+const fetchAvatar = document.getElementById('fetchAvatar');
+const avatarPreviewWrap = document.getElementById('avatarPreviewWrap');
+const avatarPreview = document.getElementById('avatarPreview');
+const avatarName = document.getElementById('avatarName');
+const removeAvatar = document.getElementById('removeAvatar');
+const avatarUpload = document.getElementById('avatarUpload');
+const captionInput = document.getElementById('caption');
+const placeBtn = document.getElementById('placeBtn');
 
-const toastEl = $('toast');
-const totalPixelsEl = $('totalPixels');
-const filledPixelsEl = $('filledPixels');
+const viewModal = document.getElementById('viewModal');
+const viewClose = document.getElementById('viewClose');
+const viewAvatar = document.getElementById('viewAvatar');
+const viewHandle = document.getElementById('viewHandle');
+const viewPledge = document.getElementById('viewPledge');
 
-const toggleMaskDebugBtn = $('toggleMaskDebug');
-const autoTuneBtn = $('autoTune');
+const toggleMaskDebug = document.getElementById('toggleMaskDebug');
+const autoTune = document.getElementById('autoTune');
 
 function loadState(){
-  try { const raw = localStorage.getItem(STORAGE_KEY); if(raw) pixels = JSON.parse(raw); } catch(e){ console.warn('loadState failed', e); }
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    if(s) pixels = JSON.parse(s);
+  } catch(e){ console.warn('loadState failed', e); }
 }
-function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels)); } catch(e){ console.warn('saveState failed', e); } }
+function saveState(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels)); } catch(e){ console.warn('saveState failed', e); } }
 
+// build grid cells
 function buildGrid(){
-  if(!gridContainer) return;
-  gridContainer.style.width = (GRID_SIZE*CELL_PX) + 'px';
-  gridContainer.style.height = (GRID_SIZE*CELL_PX) + 'px';
   gridContainer.innerHTML = '';
-  for(let y=0;y<GRID_SIZE;y++){
-    for(let x=0;x<GRID_SIZE;x++){
-      const idx = y*GRID_SIZE + x;
-      const cell = document.createElement('div');
-      cell.className = 'cell empty';
-      cell.dataset.idx = idx;
-      cell.style.width = CELL_PX + 'px';
-      cell.style.height = CELL_PX + 'px';
-      cell.addEventListener('click', (e)=>{
-        const i = Number(e.currentTarget.dataset.idx);
-        if(pixels[i]) openViewModal(i);
-        else {
-          if(isMaskedIndex(i)) openPlacementModalForIndex(i);
-          else {
-            showToast('Only cells inside the ritual logo accept placements.');
-            const n = findNearestMaskIndex(i);
-            if(n !== null) flashCell(n);
-          }
-        }
-      });
-      cell.addEventListener('mousedown', (ev)=> ev.preventDefault());
-      gridContainer.appendChild(cell);
-    }
+  gridContainer.style.setProperty('--cols', GRID_SIZE);
+  gridContainer.style.width = `${GRID_SIZE * CELL_PX}px`;
+  gridContainer.style.height = `${GRID_SIZE * CELL_PX}px`;
+  for(let i=0;i<GRID_SIZE*GRID_SIZE;i++){
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.dataset.idx = i;
+    cell.addEventListener('click', onCellClick);
+    cell.addEventListener('mousedown', (e)=> e.preventDefault());
+    gridContainer.appendChild(cell);
   }
 }
 
-function openPlacementModalForIndex(idx){
-  if(!modal) return;
+// cell click: if filled open view, else open placement only if inside mask
+let selectedIndex = null;
+function onCellClick(e){
+  const idx = Number(e.currentTarget.dataset.idx);
+  if(pixels[idx]) { openViewModal(idx); return; }
+  if(!maskComputed){ showToast('Mask still computing — wait a sec'); return; }
+  if(!isMaskedIndex(idx)){ showToast('Click inside the lit logo area.'); const n = findNearestMaskIndex(idx); if(n!==null) flashCell(n); return; }
+  openPlacementModal(idx);
+}
+
+function openPlacementModal(idx){
   selectedIndex = idx;
-  usernameInput && (usernameInput.value = '');
-  captionInput && (captionInput.value = '');
+  if(usernameInput) usernameInput.value = '';
+  if(captionInput) captionInput.value = '';
   if(avatarPreviewWrap) avatarPreviewWrap.style.display = 'none';
   if(avatarPreview) { avatarPreview.dataset.dataurl = ''; avatarPreview.dataset.url = ''; avatarPreview.src = ''; }
   modal.classList.remove('hidden');
-  // focus username safely
-  setTimeout(()=>{ if(usernameInput) usernameInput.focus(); }, 80);
+  setTimeout(()=> usernameInput && usernameInput.focus(), 60);
 }
-
-function closePlacementModal(){
-  if(!modal) return;
-  modal.classList.add('hidden');
-  selectedIndex = null;
-}
+function closePlacementModal(){ modal.classList.add('hidden'); selectedIndex = null; }
 closeModal && closeModal.addEventListener('click', closePlacementModal);
 
-// placement action
-let selectedIndex = null;
+// place pixel
 placeBtn && placeBtn.addEventListener('click', ()=>{
-  if(selectedIndex === null){ alert('Click an allowed cell inside the logo first.'); return; }
-  if(!isMaskedIndex(selectedIndex)){ alert('That cell is not allowed.'); closePlacementModal(); return; }
-  if(pixels[selectedIndex]){ alert('That cell is taken.'); closePlacementModal(); return; }
-  const username = usernameInput ? usernameInput.value.trim() : '';
-  const avatarData = avatarPreview ? (avatarPreview.dataset.dataurl || avatarPreview.dataset.url) : null;
-  if(!username && !avatarData){ alert('Provide X username or upload an avatar.'); return; }
-  const caption = captionInput ? captionInput.value.trim() : '';
-  pixels[selectedIndex] = { username: username || 'uploader', caption: caption || '', avatar: avatarData || null, ts: Date.now() };
+  if(selectedIndex === null){ alert('No cell selected'); return; }
+  if(!isMaskedIndex(selectedIndex)){ alert('Cell not allowed'); closePlacementModal(); return; }
+  if(pixels[selectedIndex]){ alert('Already taken'); closePlacementModal(); return; }
+  const u = usernameInput.value.trim();
+  const avatarData = avatarPreview.dataset.dataurl || avatarPreview.dataset.url || null;
+  if(!u && !avatarData) return alert('Provide X handle or upload avatar');
+  const c = captionInput.value.trim();
+  pixels[selectedIndex] = { username: u || 'uploader', caption: c || '', avatar: avatarData || null, ts: Date.now() };
   saveState();
   renderGrid();
   updateCounters();
@@ -111,103 +99,69 @@ placeBtn && placeBtn.addEventListener('click', ()=>{
   selectedIndex = null;
 });
 
-// view modal
+// view modal (read-only)
 function openViewModal(idx){
-  const p = pixels[idx];
-  if(!viewModal) return;
-  if(!p){
-    // defensive: nothing there
-    return;
-  }
-  if(viewAvatar) viewAvatar.src = p.avatar || 'assets/decor/skull.png';
-  if(viewHandle) viewHandle.textContent = p.username ? (p.username.startsWith('@') ? p.username : '@'+p.username) : '(unknown)';
-  if(viewPledge) viewPledge.textContent = p.caption || '(no pledge)';
+  const p = pixels[idx]; if(!p) return;
+  viewAvatar.src = p.avatar || 'assets/decor/skull.png';
+  viewHandle.textContent = p.username.startsWith('@') ? p.username : '@' + p.username;
+  viewPledge.textContent = p.caption || '(no pledge)';
   viewModal.classList.remove('hidden');
 }
-function closeViewModal(){ if(!viewModal) return; viewModal.classList.add('hidden'); }
-viewClose && viewClose.addEventListener('click', closeViewModal);
+viewClose && viewClose.addEventListener('click', ()=> viewModal.classList.add('hidden'));
 
-// close modals with Escape and overlay click
-document.addEventListener('keydown', (e)=>{
-  if(e.key === 'Escape'){ closeViewModal(); closePlacementModal(); }
-});
-
-// overlay click: detect clicks on modal background (close)
-function setupOverlayClicks(){
-  if(modal){
-    modal.addEventListener('click', (e)=>{
-      if(e.target === modal) closePlacementModal();
-    });
-  }
-  if(viewModal){
-    viewModal.addEventListener('click', (e)=>{
-      if(e.target === viewModal) closeViewModal();
-    });
-  }
-}
-
-// avatar fetch/upload (defensive)
+// avatar fetch/upload
 function loadImageWithCors(url){
   return new Promise((resolve,reject)=>{
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = ()=> resolve(img);
-    img.onerror = ()=> reject(new Error('Image load error: ' + url));
-    img.src = url + ((url.indexOf('?') === -1) ? '?v=' + Date.now() : '&v=' + Date.now());
+    img.onerror = ()=> reject(new Error('Image load error: '+url));
+    img.src = url + ((url.indexOf('?') === -1)?'?v='+Date.now():'&v='+Date.now());
   });
 }
-
 async function tryFetchAvatarToDataURL(username){
-  const avatarUrl = `https://unavatar.io/twitter/${encodeURIComponent(username)}.png`;
+  const url = `https://unavatar.io/twitter/${encodeURIComponent(username)}.png`;
   try {
-    const img = await loadImageWithCors(avatarUrl);
+    const img = await loadImageWithCors(url);
     const tmp = document.createElement('canvas'); tmp.width = CELL_PX; tmp.height = CELL_PX;
     const ctx = tmp.getContext('2d');
     const ar = img.width / img.height;
     let sw = img.width, sh = img.height, sx = 0, sy = 0;
-    if(ar > 1){ sh = img.height; sw = img.height * (tmp.width / tmp.height); sx = Math.round((img.width - sw) / 2); }
-    else { sw = img.width; sh = img.width * (tmp.height / tmp.width); sy = Math.round((img.height - sh) / 2); }
+    if(ar > 1){ sh = img.height; sw = img.height * (tmp.width / tmp.height); sx = Math.round((img.width - sw)/2); }
+    else { sw = img.width; sh = img.width * (tmp.height / tmp.width); sy = Math.round((img.height - sh)/2); }
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, tmp.width, tmp.height);
     return tmp.toDataURL('image/png');
   } catch(err){
-    console.warn('Avatar fetch->canvas failed', err);
-    return null;
+    console.warn('fetch avatar failed', err); return null;
   }
 }
-
-fetchAvatarBtn && fetchAvatarBtn.addEventListener('click', async ()=>{
-  if(!usernameInput) return;
-  const u = usernameInput.value.trim(); if(!u) { alert('Type the X username first.'); return; }
+fetchAvatar && fetchAvatar.addEventListener('click', async ()=>{
+  const u = (usernameInput && usernameInput.value.trim()) || '';
+  if(!u) return alert('Type X username first');
   const dataUrl = await tryFetchAvatarToDataURL(u);
-  if(dataUrl){
-    if(avatarPreview){ avatarPreview.src = dataUrl; avatarPreview.dataset.dataurl = dataUrl; avatarPreview.dataset.url = ''; avatarName && (avatarName.textContent = '@' + u); avatarPreviewWrap && (avatarPreviewWrap.style.display = 'flex'); }
-  } else {
+  if(dataUrl){ avatarPreview.src = dataUrl; avatarPreview.dataset.dataurl = dataUrl; avatarPreview.dataset.url = ''; avatarName.textContent = '@'+u; avatarPreviewWrap.style.display = 'flex'; }
+  else {
     const fallback = `https://unavatar.io/twitter/${encodeURIComponent(u)}.png`;
-    if(confirm('Avatar fetch to canvas failed (CORS). Use remote preview instead?')){
-      if(avatarPreview){ avatarPreview.src = fallback; avatarPreview.dataset.dataurl = ''; avatarPreview.dataset.url = fallback; avatarName && (avatarName.textContent = '@' + u); avatarPreviewWrap && (avatarPreviewWrap.style.display = 'flex'); }
-    } else alert('Upload instead.');
+    if(confirm('Fetch to canvas failed (CORS). Use remote preview?')){ avatarPreview.src = fallback; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=fallback; avatarName.textContent='@'+u; avatarPreviewWrap.style.display='flex'; }
   }
 });
-
-avatarUploadInput && avatarUploadInput.addEventListener('change', (e)=>{
+avatarUpload && avatarUpload.addEventListener('change', (e)=>{
   const f = e.target.files && e.target.files[0]; if(!f) return;
-  if(!f.type.startsWith('image/')) return alert('Please upload an image file.');
+  if(!f.type.startsWith('image/')) return alert('Upload image');
   const reader = new FileReader();
-  reader.onload = ()=>{ if(avatarPreview){ avatarPreview.src = reader.result; avatarPreview.dataset.dataurl = reader.result; avatarPreview.dataset.url = ''; avatarName && (avatarName.textContent = 'Uploaded image'); avatarPreviewWrap && (avatarPreviewWrap.style.display = 'flex'); } };
-  reader.onerror = ()=> alert('File read failed');
-  reader.readAsDataURL(f);
+  reader.onload = ()=>{ avatarPreview.src = reader.result; avatarPreview.dataset.dataurl = reader.result; avatarPreview.dataset.url = ''; avatarName.textContent = 'Uploaded'; avatarPreviewWrap.style.display='flex'; };
+  reader.onerror = ()=> alert('File read failed'); reader.readAsDataURL(f);
 });
-removeAvatarBtn && removeAvatarBtn.addEventListener('click', ()=>{ if(avatarPreview){ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; } if(avatarPreviewWrap) avatarPreviewWrap.style.display='none'; if(avatarName) avatarName.textContent=''; if(avatarUploadInput) avatarUploadInput.value=''; });
+removeAvatar && removeAvatar.addEventListener('click', ()=>{ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; avatarPreviewWrap.style.display='none'; avatarName.textContent=''; if(avatarUpload) avatarUpload.value=''; });
 
-// ---------- render grid with img elements ----------
+// render grid and avatars
 function renderGrid(){
-  if(!gridContainer) return;
   for(const el of gridContainer.children){
     const idx = Number(el.dataset.idx);
     const existingImg = el.querySelector('.cell-avatar');
     if(pixels[idx]){
       const p = pixels[idx];
-      el.classList.remove('empty'); el.classList.add('filled');
+      el.classList.add('filled'); el.classList.remove('empty');
       let img = existingImg;
       if(!img){
         img = document.createElement('img');
@@ -216,23 +170,24 @@ function renderGrid(){
         el.appendChild(img);
       }
       img.src = p.avatar || 'assets/decor/skull.png';
-      el.title = `${p.username}${p.caption ? ' — ' + p.caption : ''}`;
+      el.title = `${p.username}${p.caption? ' — '+p.caption: ''}`;
     } else {
       el.classList.remove('filled'); el.classList.add('empty');
       if(existingImg) existingImg.remove();
       el.title = '';
-      if(isMaskedIndex(idx)) el.classList.add('hoverable'); else el.classList.remove('hoverable');
       if(maskDebug && isMaskedIndex(idx)) el.classList.add('mask-debug'); else el.classList.remove('mask-debug');
+      if(isMaskedIndex(idx)) el.classList.add('hoverable'); else el.classList.remove('hoverable');
     }
   }
 }
 
+// counters
 function updateCounters(){
-  if(totalPixelsEl) totalPixelsEl.textContent = maskIndices.length;
-  if(filledPixelsEl) filledPixelsEl.textContent = Object.keys(pixels).length;
+  totalPixelsEl.textContent = maskIndices.length;
+  filledPixelsEl.textContent = Object.keys(pixels).length;
 }
 
-// ---------- mask compute (logo only, luminance + dilation) ----------
+// compute mask: draw logo to tiny canvas GRID_SIZE x GRID_SIZE, luminance threshold, dilation
 async function computeMask(threshold = 28){
   maskComputed = false; maskIndices = [];
   try {
@@ -241,52 +196,124 @@ async function computeMask(threshold = 28){
     const tctx = tiny.getContext('2d');
     tctx.clearRect(0,0,tiny.width,tiny.height);
 
+    // scale & center (cover)
     const ar = img.width / img.height;
     let dw = tiny.width, dh = tiny.height, dx = 0, dy = 0;
-    if(ar > 1){ dw = tiny.width; dh = Math.round(tiny.width / ar); dy = Math.round((tiny.height - dh) / 2); }
-    else { dh = tiny.height; dw = Math.round(tiny.height * ar); dx = Math.round((tiny.width - dw) / 2); }
+    if(ar > 1){ dw = tiny.width; dh = Math.round(tiny.width / ar); dy = Math.round((tiny.height - dh)/2); }
+    else { dh = tiny.height; dw = Math.round(tiny.height * ar); dx = Math.round((tiny.width - dw)/2); }
     tctx.drawImage(img, dx, dy, dw, dh);
 
     const imgData = tctx.getImageData(0,0,tiny.width,tiny.height).data;
     const map = new Uint8Array(GRID_SIZE * GRID_SIZE);
-    for(let gy=0; gy<GRID_SIZE; gy++){
-      for(let gx=0; gx<GRID_SIZE; gx++){
-        const p = (gy * GRID_SIZE + gx) * 4;
+    for(let y=0;y<GRID_SIZE;y++){
+      for(let x=0;x<GRID_SIZE;x++){
+        const p = (y*GRID_SIZE + x)*4;
         const r = imgData[p], g = imgData[p+1], b = imgData[p+2];
         const lum = 0.2126*r + 0.7152*g + 0.0722*b;
-        if(lum > threshold) map[gy*GRID_SIZE + gx] = 1;
+        if(lum > threshold) map[y*GRID_SIZE + x] = 1;
       }
     }
 
-    const dilated = new Uint8Array(map);
-    const neighbors = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-    for(let gy=0; gy<GRID_SIZE; gy++){
-      for(let gx=0; gx<GRID_SIZE; gx++){
-        const idx = gy*GRID_SIZE + gx;
-        if(map[idx] === 0){
-          for(const [dxn,dyn] of neighbors){
-            const nx = gx + dxn, ny = gy + dyn;
-            if(nx < 0 || nx >= GRID_SIZE || ny < 0 || ny >= GRID_SIZE) continue;
-            if(map[ny * GRID_SIZE + nx] === 1){ dilated[idx] = 1; break; }
+    // dilation
+    const dil = new Uint8Array(map);
+    const neigh = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+    for(let y=0;y<GRID_SIZE;y++){
+      for(let x=0;x<GRID_SIZE;x++){
+        const i = y*GRID_SIZE + x;
+        if(map[i] === 0){
+          for(const [dx,dy] of neigh){
+            const nx = x+dx, ny = y+dy;
+            if(nx<0||nx>=GRID_SIZE||ny<0||ny>=GRID_SIZE) continue;
+            if(map[ny*GRID_SIZE + nx] === 1){ dil[i]=1; break; }
           }
         }
       }
     }
 
-    for(let i=0;i<dilated.length;i++) if(dilated[i]) maskIndices.push(i);
+    for(let i=0;i<dil.length;i++) if(dil[i]) maskIndices.push(i);
 
+    // sanity fallback
     if(maskIndices.length === 0){
-      // small fallback cluster so site doesn't break
+      // choose center cluster so site still usable
       const center = Math.floor((GRID_SIZE*GRID_SIZE)/2);
       maskIndices = Array.from({length: Math.min(400, GRID_SIZE*GRID_SIZE)}, (_,i)=> (center + i) % (GRID_SIZE*GRID_SIZE));
-      console.warn('Mask empty; using fallback cluster.');
+      console.warn('Mask empty, fallback used');
     }
 
     maskComputed = true;
     renderGrid(); updateCounters();
-    console.log('Mask computed cells:', maskIndices.length);
+    console.log('Mask computed:', maskIndices.length);
   } catch(err){
-    console.warn('computeMask failed', err);
+    console.warn('computeMask err', err);
+    // fallback cluster
     maskIndices = Array.from({length: Math.min(400, GRID_SIZE*GRID_SIZE)}, (_,i)=>i);
     maskComputed = true;
-    renderGrid(); updateCo
+    renderGrid(); updateCounters();
+  }
+}
+
+function isMaskedIndex(idx){ return maskIndices.indexOf(idx) !== -1; }
+function findNearestMaskIndex(idx){
+  if(maskIndices.length === 0) return null;
+  const gy = Math.floor(idx/GRID_SIZE), gx = idx%GRID_SIZE;
+  let best = null, bd = 1e9;
+  for(const m of maskIndices){
+    const my = Math.floor(m/GRID_SIZE), mx = m%GRID_SIZE;
+    const dx = mx-gx, dy = my-gy, d = dx*dx + dy*dy;
+    if(d < bd){ bd = d; best = m; }
+  }
+  return best;
+}
+function flashCell(idx){
+  const c = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
+  if(!c) return;
+  c.animate([{ boxShadow:'0 0 0 rgba(0,255,120,0.0)' }, { boxShadow:'0 0 18px rgba(0,255,120,0.28)' }, { boxShadow:'0 0 0 rgba(0,255,120,0.0)' }], { duration:900, easing:'ease-out' });
+}
+
+// toast
+let _tt = null;
+function showToast(text, ms=1400){
+  if(!toastEl) return;
+  toastEl.textContent = text; toastEl.style.display = 'block'; toastEl.style.opacity = '1';
+  if(_tt) clearTimeout(_tt);
+  _tt = setTimeout(()=>{ toastEl.style.opacity = '0'; setTimeout(()=> toastEl.style.display='none',180); }, ms);
+}
+
+// celebration
+function fireCelebration(idx){
+  const c = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
+  if(c){ c.animate([{transform:'scale(1)'},{transform:'scale(1.2)'},{transform:'scale(1)'}],{duration:600}); c.style.boxShadow='0 0 24px rgba(0,255,120,0.25)'; setTimeout(()=> c.style.boxShadow='',900); }
+  // brief overlay
+  const celebrate = document.getElementById('celebrate');
+  if(celebrate){ celebrate.classList.remove('hidden'); setTimeout(()=> celebrate.classList.add('hidden'),2200); }
+}
+
+// toggle mask debug
+toggleMaskDebug && toggleMaskDebug.addEventListener('click', ()=>{
+  maskDebug = !maskDebug; renderGrid();
+});
+
+// auto-tune (tries thresholds)
+autoTune && autoTune.addEventListener('click', async ()=>{
+  const list = [10,16,22,28,34,40,48];
+  let best = {thr:28, n:0};
+  for(const t of list){
+    await computeMask(t);
+    if(maskIndices.length > best.n){ best = {thr:t, n:maskIndices.length}; }
+    await new Promise(r=>setTimeout(r,60));
+  }
+  alert(`Auto-tune picked ${best.thr} (${best.n} cells)`);
+  await computeMask(best.thr);
+});
+
+// click-outside close for modals
+document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape'){ modal && modal.classList.add('hidden'); viewModal && viewModal.classList.add('hidden'); } });
+modal && modal.addEventListener('click', (e)=> { if(e.target === modal) modal.classList.add('hidden'); });
+viewModal && viewModal.addEventListener('click', (e)=> { if(e.target === viewModal) viewModal.classList.add('hidden'); });
+
+// init
+loadState();
+buildGrid();
+computeMask();
+renderGrid();
+updateCounters();
