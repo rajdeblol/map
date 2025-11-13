@@ -6,6 +6,30 @@
   <title>Ritual Pixel Portal</title>
   <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    /* new small styles for exact avatar placement and view modal */
+    .cell { position: relative; overflow: hidden; }
+    .cell .cell-avatar {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      border-radius: 2px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.45) inset;
+      transform-origin: center;
+    }
+    .cell.filled { border: 1px solid rgba(0,255,120,0.12); }
+    /* view-only modal */
+    .view-modal { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); z-index:120; }
+    .view-inner { width:360px; background:linear-gradient(180deg,#041219,#031018); padding:18px; border-radius:12px; border:1px solid rgba(0,255,120,0.06); color:#e5fff0; box-shadow:0 20px 60px rgba(0,0,0,0.7) }
+    .view-inner h4 { margin:0 0 8px; color:var(--neon); }
+    .view-row { display:flex; gap:10px; align-items:center; margin-top:12px; }
+    .view-avatar { width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid rgba(255,255,255,0.06) }
+    .view-text { font-size:14px; color:#cfeee0 }
+    .view-close { position:absolute; right:18px; top:14px; background:transparent; border:0; color:#fff; font-size:20px; cursor:pointer }
+  </style>
 </head>
 <body>
   <div id="app" class="app ritual-theme">
@@ -25,35 +49,30 @@
         <div id="filledPixels" class="big">0</div>
       </div>
 
-      <div class="hint">Every cell is clickable now. Upload avatar or fetch from X. Ritual will accept your placement.</div>
-      <div class="ritual-footer">Green flame. Black candle. Welcome.</div>
+      <div class="hint">Click any cell to place. Click a filled cell to view the user & their pledge.</div>
 
       <div class="controls">
         <label class="small-muted">Debug mask</label>
         <button id="toggleMaskDebug" class="tertiary">Toggle mask overlay</button>
         <div style="height:12px"></div>
-
         <label class="small-muted">Auto-tune threshold</label>
         <button id="autoTune" class="tertiary">Auto-tune</button>
-        <div style="height:12px"></div>
-
-        <small style="color:rgba(200,255,200,0.45)">Mask is visual only; clicking any cell opens the modal.</small>
       </div>
     </aside>
 
     <main class="canvas-wrap">
       <div class="board">
         <canvas id="maskCanvas" class="mask-canvas" width="800" height="800"></canvas>
-        <div id="gridContainer" class="grid"></div>
+        <div id="gridContainer" class="grid" aria-label="ritual grid"></div>
       </div>
     </main>
   </div>
 
-  <!-- Modal for placement -->
-  <div id="modal" class="modal hidden">
+  <!-- Placement Modal (editable only when placing) -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="placeTitle">
     <div class="modal-inner">
       <button id="closeModal" class="close">×</button>
-      <h3>Ritualise Yourself</h3>
+      <h3 id="placeTitle">Ritualise Yourself</h3>
 
       <label>X (Twitter) Username</label>
       <div style="display:flex;gap:8px;align-items:center">
@@ -72,8 +91,8 @@
       <label style="margin-top:10px">Or upload avatar</label>
       <input id="avatarUpload" type="file" accept="image/*" />
 
-      <label>Caption</label>
-      <textarea id="caption" placeholder="All in Ritual..."></textarea>
+      <label>Caption / Pledge</label>
+      <textarea id="caption" placeholder="I pledge..."></textarea>
 
       <div class="modal-actions" style="margin-top:12px">
         <button id="placeBtn" class="place">Place Pixel</button>
@@ -81,7 +100,22 @@
     </div>
   </div>
 
-  <!-- Ritualised celebration -->
+  <!-- View-only modal (shows username & pledge; non-editable) -->
+  <div id="viewModal" class="view-modal hidden" role="dialog" aria-modal="true" aria-labelledby="viewTitle">
+    <div class="view-inner" id="viewInner">
+      <button id="viewClose" class="view-close">×</button>
+      <h4 id="viewTitle">Ritual Member</h4>
+      <div class="view-row">
+        <img id="viewAvatar" class="view-avatar" src="" alt="avatar" />
+        <div>
+          <div id="viewHandle" class="view-text" style="font-weight:700"></div>
+          <div id="viewPledge" class="view-text" style="margin-top:6px;max-width:220px;word-wrap:break-word"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Celebration (same) -->
   <div id="celebrate" class="celebrate hidden" aria-hidden="true">
     <div class="celebrate-inner">
       <div class="flame"></div>
