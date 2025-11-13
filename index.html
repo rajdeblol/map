@@ -3,42 +3,72 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ritual Pixel Portal</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Ritual Pixel Portal — working grid</title>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet" />
   <style>
-    /* small fixes for modal overlay behavior and view modal */
-    .cell { position: relative; overflow: hidden; }
-    .cell .cell-avatar { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; border-radius:2px; pointer-events:none; }
-    .cell.filled { border: 1px solid rgba(0,255,120,0.12); }
-    /* view modal overlay (centered card) */
-    .view-modal { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); z-index:120; }
-    .view-modal.hidden { display:none; }
-    .view-inner { width:360px; max-width:92vw; background:linear-gradient(180deg,#041219,#031018); padding:18px; border-radius:12px; border:1px solid rgba(0,255,120,0.06); color:#e5fff0; box-shadow:0 20px 60px rgba(0,0,0,0.7); position:relative; }
-    .view-inner h4 { margin:0 0 8px; color:#7fff9a; }
-    .view-row { display:flex; gap:10px; align-items:center; margin-top:12px; }
-    .view-avatar { width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid rgba(255,255,255,0.06) }
-    .view-text { font-size:14px; color:#cfeee0 }
-    .view-close { position:absolute; right:12px; top:10px; background:transparent; border:0; color:#cfeee0; font-size:20px; cursor:pointer }
-    /* pack placement modal overlay similarly */
-    .modal { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); z-index:130; }
-    .modal.hidden { display:none; }
-    .modal-inner { width:520px; max-width:94vw; background:linear-gradient(180deg,#05121a,#041018); padding:22px; border-radius:12px; border:1px solid rgba(0,255,120,0.06); position:relative; box-shadow:0 10px 40px rgba(0,0,0,0.6) }
-    .close { position:absolute; right:14px; top:10px; background:transparent; border:0; color:#fff; font-size:20px; cursor:pointer }
-    .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 26px; background: rgba(0,0,0,0.7); color: #dfffe8; padding: 10px 14px; border-radius: 999px; font-family: inherit; font-size: 13px; z-index: 200; box-shadow: 0 8px 30px rgba(0,0,0,0.6); display: none; }
+    :root { --bg:#03050a; --panel:#07151a; --neon:#7fff9a; --cell-size:15px; --grid-size:60; }
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#020407 0%,#071018 100%);font-family:Orbitron,Arial;color:#bfeccf}
+    .app{display:flex;height:100vh}
+    .sidebar{width:320px;padding:28px;background:#04121a;border-right:1px solid rgba(0,255,120,0.03)}
+    .title{font-size:20px;color:var(--neon);font-weight:700;margin-bottom:14px}
+    .counter{background:rgba(0,0,0,0.12);padding:18px;border-radius:12px;margin-bottom:14px}
+    .counter .label{font-size:12px;color:rgba(200,255,200,0.45)}
+    .counter .big{font-size:40px;color:var(--neon);font-weight:700;margin-top:6px}
+    .hint{font-size:13px;color:rgba(180,255,200,0.6);margin-top:18px}
+
+    /* board */
+    .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:32px}
+    .board{position:relative;width:880px;height:880px;background:#02040a;border-radius:8px;padding:14px;box-shadow:0 30px 80px rgba(0,0,0,0.6)}
+    /* grid is CSS grid so cells are aligned and visible */
+    .grid{
+      --cols: 60;
+      width: calc(var(--cols) * var(--cell-size));
+      height: calc(var(--cols) * var(--cell-size));
+      display: grid;
+      grid-template-columns: repeat(var(--cols), var(--cell-size));
+      grid-auto-rows: var(--cell-size);
+      position:relative;
+      margin:auto;
+      background-image: url('assets/logo/ritual-logo.png');
+      background-repeat:no-repeat;
+      background-position:center;
+      background-size:78% 78%;
+      box-shadow: inset 0 0 0 9999px rgba(0,0,0,0.6);
+      border:6px solid rgba(0,255,120,0.02);
+    }
+
+    .cell{
+      width:var(--cell-size); height:var(--cell-size); box-sizing:border-box;
+      border:1px solid rgba(0,255,120,0.03); background:transparent; position:relative;
+      transition: transform .08s, box-shadow .12s;
+    }
+    .cell.hoverable{cursor:pointer}
+    .cell.empty:hover{transform:scale(1.08); box-shadow:0 0 10px rgba(0,255,120,0.08)}
+    .cell.filled{border:1px solid rgba(0,255,120,0.12)}
+    .cell .cell-avatar{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:2px;pointer-events:none}
+
+    /* mask debug */
+    .mask-debug { outline: 1px solid rgba(0,255,120,0.16); background: rgba(0,255,120,0.02); }
+
+    /* modal */
+    .modal, .view-modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:200}
+    .modal.hidden, .view-modal.hidden{display:none}
+    .modal-inner, .view-inner { background: linear-gradient(180deg,#041219,#031018); padding:20px;border-radius:12px;border:1px solid rgba(0,255,120,0.06); width:480px; max-width:94vw; color:#e8fff0; position:relative }
+    .close{position:absolute;right:12px;top:10px;background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer}
+    input, textarea { width:100%; padding:10px;border-radius:8px;border:1px solid rgba(0,255,120,0.05); background:#071621; color:#e8fff0; margin-top:8px }
+    .place{background:linear-gradient(90deg,#00ff88,#00c77a);border:0;color:#042014;padding:10px 16px;border-radius:10px;font-weight:700;cursor:pointer}
+
+    /* toast */
+    .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 26px; background: rgba(0,0,0,0.7); color: #dfffe8; padding: 10px 14px; border-radius: 999px; font-family: inherit; font-size: 13px; z-index: 300; display:none }
   </style>
 </head>
 <body>
-  <div id="app" class="app ritual-theme">
+  <div class="app">
     <aside class="sidebar">
-      <div class="brand">
-        <img src="assets/decor/skull.png" alt="skull" class="skull" />
-        <div class="title">Ritual</div>
-        <img src="assets/decor/candle.png" alt="candle" class="candle" />
-      </div>
+      <div class="title">Ritual</div>
 
       <div class="counter">
-        <div class="label">TOTAL PIXELS</div>
+        <div class="label">TOTAL CELLS (logo)</div>
         <div id="totalPixels" class="big">0</div>
       </div>
       <div class="counter">
@@ -46,42 +76,39 @@
         <div id="filledPixels" class="big">0</div>
       </div>
 
-      <div class="hint">Only cells inside the ritual logo accept new placements. Click a filled cell to view its pledge.</div>
+      <div class="hint">Click a glowing cell (inside logo) to place your avatar and X handle.</div>
 
-      <div class="controls">
-        <label class="small-muted">Debug mask</label>
-        <button id="toggleMaskDebug" class="tertiary">Toggle mask overlay</button>
+      <div style="margin-top:18px">
+        <button id="toggleMaskDebug" class="place" style="background:#113">Toggle mask overlay</button>
         <div style="height:12px"></div>
-        <label class="small-muted">Auto-tune threshold</label>
-        <button id="autoTune" class="tertiary">Auto-tune</button>
+        <button id="autoTune" class="place" style="background:#113">Auto-tune</button>
       </div>
     </aside>
 
     <main class="canvas-wrap">
       <div class="board">
-        <canvas id="maskCanvas" class="mask-canvas" width="800" height="800"></canvas>
-        <div id="gridContainer" class="grid" aria-label="ritual grid"></div>
+        <div id="gridContainer" class="grid" style="--cols:60; --cell-size:15px;"></div>
       </div>
     </main>
   </div>
 
-  <!-- Placement Modal -->
-  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="placeTitle">
-    <div class="modal-inner" role="document">
-      <button id="closeModal" class="close" aria-label="close placement">×</button>
-      <h3 id="placeTitle">Ritualise Yourself</h3>
+  <!-- Placement modal -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-inner">
+      <button id="closeModal" class="close">×</button>
+      <h3 style="color:var(--neon)">Ritualise Yourself</h3>
 
       <label>X (Twitter) Username</label>
       <div style="display:flex;gap:8px;align-items:center">
         <input id="username" placeholder="yourXhandle (no @)" />
-        <button id="fetchAvatar" class="place small">Fetch</button>
+        <button id="fetchAvatar" class="place" style="padding:8px 10px">Fetch</button>
       </div>
 
       <div id="avatarPreviewWrap" style="margin-top:10px;display:none;align-items:center;gap:10px">
-        <img id="avatarPreview" alt="avatar preview" width="48" height="48" style="border-radius:8px;border:1px solid rgba(255,255,255,0.06)" />
+        <img id="avatarPreview" width="48" height="48" style="border-radius:8px;border:1px solid rgba(255,255,255,0.06)" />
         <div style="display:flex;flex-direction:column">
           <div id="avatarName" style="font-size:13px;color:#cfe3ff"></div>
-          <button id="removeAvatar" class="tertiary">Remove</button>
+          <button id="removeAvatar" class="place" style="background:#223;padding:6px">Remove</button>
         </div>
       </div>
 
@@ -91,37 +118,28 @@
       <label>Caption / Pledge</label>
       <textarea id="caption" placeholder="I pledge..."></textarea>
 
-      <div class="modal-actions" style="margin-top:12px">
+      <div style="margin-top:12px;display:flex;justify-content:flex-end">
         <button id="placeBtn" class="place">Place Pixel</button>
       </div>
     </div>
   </div>
 
-  <!-- View-only modal -->
-  <div id="viewModal" class="view-modal hidden" role="dialog" aria-modal="true" aria-labelledby="viewTitle">
-    <div class="view-inner" role="document">
-      <button id="viewClose" class="view-close" aria-label="close view">×</button>
-      <h4 id="viewTitle">Ritual Member</h4>
-      <div class="view-row">
-        <img id="viewAvatar" class="view-avatar" src="" alt="avatar" />
+  <!-- View modal -->
+  <div id="viewModal" class="view-modal hidden" role="dialog" aria-modal="true">
+    <div class="view-inner modal-inner">
+      <button id="viewClose" class="close">×</button>
+      <h3 style="color:var(--neon)">Ritual Member</h3>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:8px">
+        <img id="viewAvatar" width="64" height="64" style="border-radius:8px;border:1px solid rgba(255,255,255,0.06)" />
         <div>
-          <div id="viewHandle" class="view-text" style="font-weight:700"></div>
-          <div id="viewPledge" class="view-text" style="margin-top:6px;max-width:220px;word-wrap:break-word"></div>
+          <div id="viewHandle" style="font-weight:700"></div>
+          <div id="viewPledge" style="margin-top:8px;color:#cfeee0;max-width:380px;word-wrap:break-word"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Celebration -->
-  <div id="celebrate" class="celebrate hidden" aria-hidden="true">
-    <div class="celebrate-inner">
-      <div class="flame"></div>
-      <h1 class="ritualised">YOU ARE RITUALISED</h1>
-      <p class="sub">Welcome to the fold.</p>
-    </div>
-  </div>
-
-  <div id="toast" class="toast" aria-hidden="true"></div>
+  <div id="toast" class="toast"></div>
 
   <script src="script.js"></script>
 </body>
