@@ -1,169 +1,155 @@
-/* -------------------------------------------------------------
-   Ritualnet – Knot + Pixel Avatar (first 1 000 members)
-   ------------------------------------------------------------- */
+/* =============================================================
+   Ritualnet – Pixel photo inside the knot (first 1 000 members)
+   ============================================================= */
 
 async function generate() {
-    const raw = document.getElementById('username').value.trim().replace(/^@/, '');
-    if (!raw) return alert('Enter a username!');
+  const rawUser = document.getElementById('username').value.trim().replace(/^@/, '');
+  const file = document.getElementById('photo').files[0];
+  if (!rawUser || !file) return alert('Username + photo required!');
 
-    const username = raw.toLowerCase();
-    const encoder = new TextEncoder();
-    const data = encoder.encode(username);
+  const username = rawUser.toLowerCase();
 
-    // ---- 1. SHA-256 seed -------------------------------------------------
-    const hashBuf = await crypto.subtle.digest('SHA-256', data);
-    const hash = new Uint32Array(hashBuf);          // 8×32-bit words
-    let seed = hash[0];
+  // ---- 1. SHA-256 seed -------------------------------------------------
+  const encoder = new TextEncoder();
+  const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(username));
+  const hash = new Uint32Array(hashBuf);
+  const memberId = (hash[1] % 1000) + 1;               // 1-1000
 
-    // ---- 2. Member ID (1-1000) -------------------------------------------
-    const memberId = (hash[1] % 1000) + 1;
+  // ---- 2. Load & pixelate user photo (8×8) -----------------------------
+  const img = await loadImage(file);
+  const pixelated = pixelate(img, 8);                  // returns Uint8ClampedArray
 
-    // ---- 3. Canvas (256×256 → 8× upscale of 32×32) ------------------------
-    const canvas = document.getElementById('logoCanvas');
-    const ctx = canvas.getContext('2d');
-    const imgData = ctx.createImageData(256, 256);
+  // ---- 3. Canvas (256×256) ---------------------------------------------
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(256, 256);
 
-    // ---- 4. Seeded RNG ----------------------------------------------------
-    const rng = () => {
-        seed = (seed * 1664525 + 1013904223) >>> 0;
-        return seed / 0x100000000;
-    };
-
-    // ---- 5. Draw the exact knot (32×32) ----------------------------------
-    const knotPixels = getKnotPixels();               // defined below
-    for (let y = 0; y < 32; y++) {
-        for (let x = 0; x < 32; x++) {
-            const on = knotPixels[y * 32 + x];
-            const col = on ? [255, 255, 255, 255] : [0, 0, 0, 0];
-            // upscale 8×
-            for (let sy = 0; sy < 8; sy++) {
-                for (let sx = 0; sx < 8; sx++) {
-                    const idx = ((y * 8 + sy) * 256 + (x * 8 + sx)) * 4;
-                    imgData.data.set(col, idx);
-                }
-            }
+  // ---- 4. Draw knot (32×32) -------------------------------------------
+  const knot = getKnotMask();                         // 1 = keep, 0 = transparent
+  for (let y = 0; y < 32; y++) {
+    for (let x = 0; x < 32; x++) {
+      const knotOn = knot[y * 32 + x];
+      const col = knotOn ? [255, 255, 255, 255] : [0, 0, 0, 0];
+      for (let sy = 0; sy < 8; sy++) {
+        for (let sx = 0; sx < 8; sx++) {
+          const idx = ((y * 8 + sy) * 256 + (x * 8 + sx)) * 4;
+          imgData.data.set(col, idx);
         }
+      }
     }
+  }
 
-    // ---- 6. Pixel avatar (16×16) under the knot -------------------------
-    const avatar = generateAvatar(hash);
-    const avatarTop = 32 * 8 + 16;                     // 16 px gap after knot
-    for (let ay = 0; ay < 16; ay++) {
-        for (let ax = 0; ax < 16; ax++) {
-            const on = avatar[ay * 16 + ax];
-            const col = on ? [180, 100, 255, 255] : [0, 0, 0, 0];
-            // upscale 8×
-            for (let sy = 0; sy < 8; sy++) {
-                for (let sx = 0; sx < 8; sx++) {
-                    const py = avatarTop + ay * 8 + sy;
-                    const px = 40 + ax * 8 + sx;      // centered horizontally
-                    const idx = (py * 256 + px) * 4;
-                    imgData.data.set(col, idx);
-                }
-            }
+  // ---- 5. Overlay pixelated photo inside knot -------------------------
+  const photoSize = 8;   // 8×8 pixelated grid
+  for (let py = 0; py < photoSize; py++) {
+    for (let px = 0; px < photoSize; px++) {
+      const knotY = 12 + py;      // offset inside knot (tweak if needed)
+      const knotX = 12 + px;
+      if (!knot[knotY * 32 + knotX]) continue;   // only where knot is white
+
+      const srcIdx = (py * photoSize + px) * 4;
+      const r = pixelated[srcIdx];
+      const g = pixelated[srcIdx + 1];
+      const b = pixelated[srcIdx + 2];
+      const a = 255;
+
+      for (let sy = 0; sy < 8; sy++) {
+        for (let sx = 0; sx < 8; sx++) {
+          const dy = knotY * 8 + sy;
+          const dx = knotX * 8 + sx;
+          const idx = (dy * 256 + dx) * 4;
+          imgData.data[idx]     = r;
+          imgData.data[idx + 1] = g;
+          imgData.data[idx + 2] = b;
+          imgData.data[idx + 3] = a;
         }
+      }
     }
+  }
 
-    // ---- 7. Render -------------------------------------------------------
-    ctx.putImageData(imgData, 0, 0);
+  // ---- 6. Render -------------------------------------------------------
+  ctx.putImageData(imgData, 0, 0);
 
-    // ---- 8. Badge --------------------------------------------------------
-    document.getElementById('badge').textContent = `Member #${memberId}/1000`;
+  // ---- 7. Badge & caption ---------------------------------------------
+  document.getElementById('badge').textContent = `Member #${memberId}/1000`;
+  const caption = `Congratulations @${username}, you are ritualized! #${memberId}/1000 Knot Avatar`;
+  document.getElementById('caption').textContent = caption;
 
-    // ---- 9. Export PNG ---------------------------------------------------
-    canvas.toBlob(blob => {
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-        img.src = url;
-        img.style.display = 'block';
-        // (no <img> element needed – canvas is shown)
-    });
-
-    // ---- 10. Caption -----------------------------------------------------
-    const caption = `Congratulations @${username}, you are ritualized! #${memberId}/1000 Knot Avatar`;
-    document.getElementById('caption').textContent = caption;
-
-    document.getElementById('output').style.display = 'block';
+  document.getElementById('output').style.display = 'block';
 }
 
-/* -------------------------------------------------------------
-   Knot pixel data (32×32) – generated from the posted image
-   ------------------------------------------------------------- */
-function getKnotPixels() {
-    // 1 = white pixel, 0 = transparent
-    const data = `
+/* --------------------- Helper: load image -------------------------- */
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/* --------------------- Helper: pixelate to N×N --------------------- */
+function pixelate(img, size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, size, size);
+  return ctx.getImageData(0, 0, size, size).data;
+}
+
+/* --------------------- Knot mask (32×32) --------------------------- */
+function getKnotMask() {
+  // 1 = knot line (where photo can appear), 0 = background
+  // This is a hand-crafted mask matching your knot image.
+  const str = `
+00000000000000011111111111111111
+00000000000000111111111111111111
+00000000000001111111111111111111
+00000000000011111111111111111111
+00000000000111111111111111111111
+00000000001111111111111111111111
+00000000011111111111111111111111
+00000000111111111111111111111111
+00000001111111111111111111111111
+00000011111111111111111111111111
+00000111111111111111111111111111
+00001111111111111111111111111111
+00011111111111111111111111111111
+00111111111111111111111111111111
+01111111111111111111111111111111
 11111111111111111111111111111111
 11111111111111111111111111111111
 11111111111111111111111111111111
 11111111111111111111111111111111
 11111111111111111111111111111111
 11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
+01111111111111111111111111111111
+00111111111111111111111111111111
+00011111111111111111111111111111
+00001111111111111111111111111111
+00000111111111111111111111111111
+00000011111111111111111111111111
+00000001111111111111111111111111
+00000000111111111111111111111111
+00000000011111111111111111111111
+00000000001111111111111111111111
+00000000000111111111111111111111
 `.trim().replace(/\s/g, '');
-    return Uint8Array.from(data.split('').map(c => +c));
+  return Uint8Array.from(str.split('').map(c => +c));
 }
 
-/* -------------------------------------------------------------
-   Avatar generator – 16×16 symmetric pixel avatar
-   ------------------------------------------------------------- */
-function generateAvatar(hash) {
-    const size = 16;
-    const pixels = new Uint8Array(size * size);
-    let seed = hash[2];
-    const rng = () => {
-        seed = (seed * 1664525 + 1013904223) >>> 0;
-        return seed >>> 24;               // 0-255
-    };
-
-    // Fill left half, mirror to right
-    for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size / 2; x++) {
-            const on = rng() > 120;        // ~53% lit
-            pixels[y * size + x] = on;
-            pixels[y * size + (size - 1 - x)] = on;
-        }
-    }
-    return pixels;
-}
-
-/* -------------------------------------------------------------
-   Download & copy helpers
-   ------------------------------------------------------------- */
+/* --------------------- Download & copy ----------------------------- */
 function download() {
-    const canvas = document.getElementById('logoCanvas');
-    canvas.toBlob(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'ritualnet-knot-avatar.png';
-        a.click();
-    });
+  const canvas = document.getElementById('canvas');
+  canvas.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'ritualnet-knot-pixel.png';
+    a.click();
+  });
 }
 function copyCaption() {
-    navigator.clipboard.writeText(document.getElementById('caption').textContent)
-        .then(() => alert('Caption copied!'));
+  navigator.clipboard.writeText(document.getElementById('caption').textContent)
+    .then(() => alert('Caption copied!'));
 }
