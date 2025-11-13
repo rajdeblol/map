@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ritualnet – Knot Logo Generator</title>
+    <style>
+        body {font-family: Arial, sans-serif; text-align: center; background:#111; color:#fff; padding:20px;}
+        input {padding:10px; margin:10px; width:220px;}
+        button {padding:10px 20px; background:#6a0; color:#000; border:none; cursor:pointer;}
+        #output {display:none; margin-top:30px;}
+        #logoCanvas {image-rendering:pixelated; border:2px solid #fff; margin:15px;}
+        #badge {font: bold 12px monospace; color:#ff0; text-shadow:1px 1px 0 #000;}
+        #caption {background:#222; padding:10px; margin:10px; font-family:monospace;}
+    </style>
+</head>
+<body>
+    <h1>Ritualnet Knot Ritualizer</h1>
+    <p>Enter your X username → get the knot logo with your pixel avatar underneath.</p>
+    <input type="text" id="username" placeholder="@yourhandle" maxlength="50">
+    <br><button onclick="generate()">Ritualize Me!</button>
+
+    <div id="output">
+        <h2>Your Ritualized Image</h2>
+        <canvas id="logoCanvas" width="256" height="256"></canvas><br>
+        <div id="badge"></div>
+        <p id="caption"></p>
+        <button onclick="download()">Download PNG</button>
+        <button onclick="copyCaption()">Copy Caption</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
