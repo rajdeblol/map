@@ -1,12 +1,12 @@
-// ritual script v4 (full)
+// ritual script v4 - full (drop-in)
 // - luminance-based mask (works with gray-on-black logos)
-// - 1px dilation, auto-expansion to MAX_PARTICIPANTS
+// - 1px dilation, expansion to MAX_PARTICIPANTS
 // - avatar fetch + upload (dataURL storage)
 // - celebration animation on placement
-// - mask debug toggle + auto-tune helper
+// - debug: mask overlay toggle, auto-tune, Allow anywhere
 
-const GRID_SIZE = 60;   // 60x60 grid
-const CELL_PX = 15;     // CSS cell size must match this
+const GRID_SIZE = 60;   // grid size (60x60)
+const CELL_PX = 15;     // must match CSS
 const STORAGE_KEY = 'ritual_pixels_v4';
 const LOGO_PATH = 'assets/logo/ritual-logo.png';
 const MAX_PARTICIPANTS = 1000;
@@ -16,6 +16,7 @@ let selectedIndex = null;
 let maskIndices = [];
 let maskComputed = false;
 let maskDebug = false;
+let allowAnywhere = false;
 
 const gridContainer = document.getElementById('gridContainer');
 const maskCanvas = document.getElementById('maskCanvas');
@@ -35,15 +36,17 @@ const removeAvatarBtn = document.getElementById('removeAvatar');
 const avatarUploadInput = document.getElementById('avatarUpload');
 
 const celebrateEl = document.getElementById('celebrate');
-
 const toggleMaskDebugBtn = document.getElementById('toggleMaskDebug');
 const autoTuneBtn = document.getElementById('autoTune');
+const allowAnywhereBtn = document.getElementById('allowAnywhereBtn');
 
+// ---------- storage ----------
 function loadState(){
   try { const raw = localStorage.getItem(STORAGE_KEY); if(raw) pixels = JSON.parse(raw); } catch(e){ console.warn('loadState failed', e); }
 }
 function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels)); } catch(e){ console.warn('saveState', e); } }
 
+// ---------- grid build ----------
 function buildGrid(){
   gridContainer.style.width = (GRID_SIZE*CELL_PX)+'px';
   gridContainer.style.height = (GRID_SIZE*CELL_PX)+'px';
@@ -56,17 +59,36 @@ function buildGrid(){
       cell.dataset.idx = idx;
       cell.style.width = CELL_PX+'px';
       cell.style.height = CELL_PX+'px';
+      cell.style.pointerEvents = 'auto';
       cell.addEventListener('click', onCellClick);
+      cell.addEventListener('mousedown', (e)=>e.preventDefault());
       gridContainer.appendChild(cell);
     }
   }
 }
 
+// ---------- clicks ----------
 function onCellClick(e){
   const idx = Number(e.currentTarget.dataset.idx);
-  if(!maskComputed){ alert('Mask computing — wait a second.'); return; }
-  if(!isMaskedIndex(idx)) return;
-  if(pixels[idx]) return alert('Pixel already placed. Pick another spot.');
+  console.log('[click] idx', idx, 'maskComputed', maskComputed, 'isMasked', isMaskedIndex(idx), 'allowAnywhere', allowAnywhere, 'placed', !!pixels[idx]);
+  if(!maskComputed){
+    alert('Mask still computing — please wait a second.');
+    return;
+  }
+  if(pixels[idx]){
+    alert('Pixel already placed. Choose another.');
+    return;
+  }
+  if(isMaskedIndex(idx) || allowAnywhere){
+    openPlacementModalForIndex(idx);
+  } else {
+    showDebugToast(`Outside logo. Nearest allowed will be highlighted.`);
+    const nearest = findNearestMaskIndex(idx);
+    if(nearest !== null) flashCell(nearest);
+  }
+}
+
+function openPlacementModalForIndex(idx){
   selectedIndex = idx;
   usernameInput.value = '';
   captionInput.value = '';
@@ -74,12 +96,15 @@ function onCellClick(e){
   avatarPreview.dataset.dataurl = '';
   avatarPreview.dataset.url = '';
   modal.classList.remove('hidden');
+  setTimeout(()=>usernameInput.focus(), 80);
 }
 
 function closeModalFn(){ modal.classList.add('hidden'); selectedIndex = null }
 closeModal.addEventListener('click', closeModalFn);
 
+// ---------- placement ----------
 placeBtn.addEventListener('click', ()=>{
+  if(selectedIndex === null){ alert('No cell selected. Click a cell first.'); return; }
   const u = usernameInput.value.trim();
   const avatarData = avatarPreview.dataset.dataurl || null;
   if(!u && !avatarData) return alert('Add a username or upload an avatar.');
@@ -93,8 +118,8 @@ placeBtn.addEventListener('click', ()=>{
   fireCelebration(selectedIndex);
 });
 
-// Avatar fetch to dataURL (attempt via unavatar; may fail due to CORS -> upload fallback)
-fetchAvatarBtn.addEventListener('click', async ()=>{
+// ---------- avatar fetch & upload ----------
+fetchAvatarBtn && fetchAvatarBtn.addEventListener('click', async ()=>{
   const u = usernameInput.value.trim(); if(!u) return alert('Type the X username first (no @).');
   const avatarUrl = `https://unavatar.io/twitter/${encodeURIComponent(u)}.png`;
   try {
@@ -110,25 +135,25 @@ fetchAvatarBtn.addEventListener('click', async ()=>{
     avatarPreview.src = dataUrl; avatarPreview.dataset.dataurl = dataUrl; avatarPreview.dataset.url = avatarUrl; avatarName.textContent = '@' + u; avatarPreviewWrap.style.display = 'flex';
   } catch(err){
     console.warn('Avatar fetch failed', err);
-    if(confirm('Failed to fetch avatar due to CORS. Use remote URL preview instead?')){
+    if(confirm('Avatar fetch failed due to CORS. Use remote URL preview instead?')){
       avatarPreview.src = avatarUrl; avatarPreview.dataset.dataurl = ''; avatarPreview.dataset.url = avatarUrl; avatarName.textContent = '@' + u; avatarPreviewWrap.style.display = 'flex';
     } else { alert('Use upload instead.'); }
   }
 });
 
-// upload fallback
-avatarUploadInput.addEventListener('change', (e)=>{
+avatarUploadInput && avatarUploadInput.addEventListener('change', (e)=>{
   const f = e.target.files && e.target.files[0]; if(!f) return;
   if(!f.type.startsWith('image/')) return alert('Please upload an image.');
   const reader = new FileReader();
   reader.onload = ()=>{ avatarPreview.src = reader.result; avatarPreview.dataset.dataurl = reader.result; avatarPreview.dataset.url = ''; avatarName.textContent = 'Uploaded image'; avatarPreviewWrap.style.display = 'flex'; };
   reader.onerror = ()=> alert('File read failed'); reader.readAsDataURL(f);
 });
-removeAvatarBtn.addEventListener('click', ()=>{ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; avatarPreviewWrap.style.display='none'; avatarName.textContent=''; avatarUploadInput.value=''; });
+removeAvatarBtn && removeAvatarBtn.addEventListener('click', ()=>{ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; avatarPreviewWrap.style.display='none'; avatarName.textContent=''; avatarUploadInput.value=''; });
 
-// helper for loading image with CORS
+// helper - load image with crossOrigin
 function loadImageWithCors(url){ return new Promise((resolve,reject)=>{ const img=new Image(); img.crossOrigin='anonymous'; img.onload=()=>resolve(img); img.onerror=()=>reject(new Error('Image load error: '+url)); img.src = url + ((url.indexOf('?')===-1)?'?v='+Date.now():'&v='+Date.now()); }); }
 
+// ---------- render ----------
 function renderGrid(){
   for(const el of gridContainer.children){
     const idx = Number(el.dataset.idx);
@@ -148,7 +173,7 @@ function renderGrid(){
 
 function updateCounters(){ totalPixelsEl.textContent = Math.min(MAX_PARTICIPANTS, maskIndices.length || MAX_PARTICIPANTS); filledPixelsEl.textContent = Object.keys(pixels).length; }
 
-// ========= new luminance-based mask with dilation + expansion =========
+// ---------- mask computation (luminance + dilation + expansion) ----------
 async function computeMaskAndEnsureCapacity(threshold = 28){
   maskComputed = false; maskIndices = [];
   try {
@@ -158,7 +183,6 @@ async function computeMaskAndEnsureCapacity(threshold = 28){
     const tctx = tiny.getContext('2d');
     tctx.clearRect(0,0,tiny.width,tiny.height);
 
-    // draw logo scaled & centered (cover-like)
     const ar = img.width / img.height;
     let dw = tiny.width, dh = tiny.height, dx = 0, dy = 0;
     if(ar > 1){
@@ -183,7 +207,7 @@ async function computeMaskAndEnsureCapacity(threshold = 28){
       }
     }
 
-    // 1-pixel dilation to fill thin gaps
+    // dilation
     const dilated = new Uint8Array(map);
     const neighbors = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
     for(let gy=0; gy<GRID_SIZE; gy++){
@@ -199,7 +223,6 @@ async function computeMaskAndEnsureCapacity(threshold = 28){
       }
     }
 
-    // collect maskIndices
     for(let i=0;i<dilated.length;i++) if(dilated[i]) maskIndices.push(i);
 
     // expand to capacity (nearest to center)
@@ -221,7 +244,6 @@ async function computeMaskAndEnsureCapacity(threshold = 28){
       for(let i=0;i<needed && i<distanceList.length;i++) maskIndices.push(distanceList[i].idx);
     }
 
-    // last-resort fallback
     if(maskIndices.length === 0){
       maskIndices = Array.from({length: Math.min(GRID_SIZE*GRID_SIZE, MAX_PARTICIPANTS)}, (_,i)=>i);
       console.warn('Mask empty -> fallback to first cells.');
@@ -241,40 +263,68 @@ async function computeMaskAndEnsureCapacity(threshold = 28){
 
 function isMaskedIndex(idx){ return maskIndices.indexOf(idx) !== -1; }
 
-// ========== celebration ==========
+// ---------- helpers ----------
+function findNearestMaskIndex(idx){
+  if(!maskIndices || maskIndices.length === 0) return null;
+  const gy = Math.floor(idx / GRID_SIZE), gx = idx % GRID_SIZE;
+  let best = null, bestD = 1e9;
+  for(const m of maskIndices){
+    const my = Math.floor(m / GRID_SIZE), mx = m % GRID_SIZE;
+    const dx = mx - gx, dy = my - gy, d = dx*dx + dy*dy;
+    if(d < bestD){ bestD = d; best = m; }
+  }
+  return best;
+}
+
+function flashCell(idx){
+  const c = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
+  if(!c) return;
+  c.animate([{ boxShadow: '0 0 0 rgba(0,255,120,0.0)' }, { boxShadow: '0 0 18px rgba(0,255,120,0.28)' }, { boxShadow: '0 0 0 rgba(0,255,120,0.0)' }], { duration: 900, easing: 'ease-out' });
+}
+
+// celebration
 function fireCelebration(idx){
-  // cell pulse
   const cell = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
   if(cell){
     cell.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 700, easing: 'ease-out' });
     cell.style.boxShadow = '0 0 28px rgba(0,255,120,0.25)';
     setTimeout(()=>{ cell.style.boxShadow = ''; }, 1000);
   }
-
-  // overlay
-  celebrateEl.classList.remove('hidden');
-  celebrateEl.setAttribute('aria-hidden', 'false');
+  celebrateEl.classList.remove('hidden'); celebrateEl.setAttribute('aria-hidden', 'false');
   setTimeout(()=>{ celebrateEl.classList.add('hidden'); celebrateEl.setAttribute('aria-hidden','true'); }, 2600);
 }
 
-// ========== debug & helpers ==========
-toggleMaskDebugBtn.addEventListener('click', ()=>{ maskDebug = !maskDebug; renderGrid(); });
-autoTuneBtn.addEventListener('click', async ()=>{
-  // try thresholds in a small range and pick one with maskIndices closest to MAX_PARTICIPANTS but >= 400
+// debug toast (console-first)
+let _toastTimer = null;
+function showDebugToast(text){
+  console.log('[toast] ', text);
+  if(_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(()=>{ _toastTimer = null; }, 1200);
+}
+
+// ---------- debug controls ----------
+toggleMaskDebugBtn && toggleMaskDebugBtn.addEventListener('click', ()=>{ maskDebug = !maskDebug; renderGrid(); });
+
+autoTuneBtn && autoTuneBtn.addEventListener('click', async ()=>{
   const candidates = [12,18,24,30,36,42,50];
   let best = {thr:24, n:0};
   for(const t of candidates){
     await computeMaskAndEnsureCapacity(t);
     const n = maskIndices.length;
     if(n > best.n && n <= MAX_PARTICIPANTS) best = {thr:t, n};
-    // small pause so UI doesn't block
     await new Promise(r=>setTimeout(r,80));
   }
   alert(`Auto-tune selected threshold ${best.thr} -> cells ${best.n}. Recomputing with that value.`);
   await computeMaskAndEnsureCapacity(best.thr);
 });
 
-// init
+allowAnywhereBtn && allowAnywhereBtn.addEventListener('click', ()=>{
+  allowAnywhere = !allowAnywhere;
+  allowAnywhereBtn.textContent = `Allow anywhere: ${allowAnywhere ? 'ON' : 'OFF'}`;
+  allowAnywhereBtn.style.background = allowAnywhere ? 'linear-gradient(90deg,#ffdd00,#a6ff00)' : '';
+});
+
+// ---------- init ----------
 loadState();
 buildGrid();
 computeMaskAndEnsureCapacity();
