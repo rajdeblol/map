@@ -12,14 +12,35 @@ html,body,#app{height:100%;background:var(--bg);color:#dfe8f5;margin:0}
 .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:32px}
 .board{position:relative;width:800px;height:800px;background:#050608;border-radius:6px;padding:14px;box-shadow:0 6px 30px rgba(0,0,0,0.6)}
 .mask-canvas{display:none}
-.grid{position:absolute;inset:14px;border:6px solid rgba(120,190,255,0.05);background:linear-gradient(180deg,#03060a,#071018);overflow:hidden}
-.cell{width:20px;height:20px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.03);float:left;transition:box-shadow .12s, transform .08s}
+
+/* GRID: logo overlay as faint background so the user sees it */
+.grid{
+  position:absolute;
+  inset:14px;
+  border:6px solid rgba(120,190,255,0.05);
+  background:linear-gradient(180deg,#03060a,#071018);
+  overflow:hidden;
+  /* faint logo overlay - path must match your file */
+  background-image: url('assets/logo/ritual-logo.png');
+  background-repeat:no-repeat;
+  background-position:center;
+  background-size:70% 70%;
+  opacity:1;
+  /* we draw a dark overlay so the logo is subtle */
+  box-shadow: inset 0 0 0 9999px rgba(0,0,0,0.55);
+}
+
+/* cells */
+.cell{width:20px;height:20px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.03);float:left;transition:box-shadow .12s, transform .08s;background-size:cover;background-position:center}
 .cell.hoverable{cursor:pointer}
 .cell.empty:hover{transform:scale(1.06);box-shadow:0 0 8px rgba(140,255,140,0.14)}
-.cell.filled{background:var(--pixel);box-shadow:0 0 12px rgba(140,255,140,0.2)}
+.cell.filled{background-color:var(--pixel);box-shadow:0 0 12px rgba(140,255,140,0.2);border:0}
+.cell.filled-avatar{background-color:transparent;border:0;box-shadow:0 0 18px rgba(140,255,140,0.12)}
+
+/* modal */
 .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(4,6,10,0.6)}
 .modal.hidden{display:none}
-.modal-inner{width:420px;background:#0b1620;padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.03)}
+.modal-inner{width:460px;background:#0b1620;padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);position:relative}
 .close{position:absolute;right:22px;top:18px;background:transparent;border:0;color:#fff;font-size:20px}
 .modal-inner h3{margin:0 0 14px}
 .modal-inner label{display:block;color:var(--muted);font-size:13px;margin-top:8px}
