@@ -1,8 +1,9 @@
-// alignment fix: logo <img> behind grid and mask computation uses same scaling/offset.
-// GRID_SIZE and CELL_PX must match the CSS vars in index.html
+// Enlarged logo mask + strict inside-logo-only placements.
+// Keep LOGO_SCALE identical to CSS root (--logo-scale)
 const GRID_SIZE = 60;
 const CELL_PX = 15;
-const STORAGE_KEY = 'ritual_pixels_aligned';
+const LOGO_SCALE = 1.12;     // MUST match CSS --logo-scale in index.html
+const STORAGE_KEY = 'ritual_pixels_enlarged';
 const LOGO_PATH = 'assets/logo/ritual-logo.png';
 
 let pixels = {};             // idx -> { username, caption, avatar }
@@ -38,14 +39,10 @@ const toggleMaskDebug = document.getElementById('toggleMaskDebug');
 const autoTune = document.getElementById('autoTune');
 
 function loadState(){
-  try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    if(s) pixels = JSON.parse(s);
-  } catch(e){ console.warn('loadState failed', e); }
+  try { const s = localStorage.getItem(STORAGE_KEY); if(s) pixels = JSON.parse(s); } catch(e){ console.warn('loadState failed', e); }
 }
 function saveState(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels)); } catch(e){ console.warn('saveState failed', e); } }
 
-// build grid cells sized exactly to CSS cell size
 function buildGrid(){
   gridContainer.innerHTML = '';
   gridContainer.style.setProperty('--cols', GRID_SIZE);
@@ -61,17 +58,6 @@ function buildGrid(){
     cell.addEventListener('mousedown', (e)=> e.preventDefault());
     gridContainer.appendChild(cell);
   }
-}
-
-// compute how the logo <img> is scaled inside .grid-wrap so mask uses same transform
-function computeLogoTransformForGrid(){
-  // gridContainer is exactly the pixel dimension we used for mask (GRID_SIZE*CELL_PX).
-  // We render the logo to that same pixel size (GRID_SIZE x GRID_SIZE) for mask computation,
-  // while the visible #logoImg uses object-fit:contain to fit inside the grid container.
-  // Therefore the mask draw should match the image rendered centered and scaled.
-  // We'll return the same scale/offset used by the mask computation (drawImage) so visual and mask align.
-  // (We do exact same drawing logic in computeMask).
-  return {}; // nothing needed here because computeMask uses identical cover logic.
 }
 
 let selectedIndex = null;
@@ -122,7 +108,7 @@ function openViewModal(idx){
 }
 viewClose && viewClose.addEventListener('click', ()=> viewModal.classList.add('hidden'));
 
-// avatar fetch/upload (same robust approach)
+// avatar fetch/upload
 function loadImageWithCors(url){
   return new Promise((resolve,reject)=>{
     const img = new Image();
@@ -167,7 +153,7 @@ avatarUpload && avatarUpload.addEventListener('change', (e)=>{
 });
 removeAvatar && removeAvatar.addEventListener('click', ()=>{ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; avatarPreviewWrap.style.display='none'; avatarName.textContent=''; if(avatarUpload) avatarUpload.value=''; });
 
-// render grid and avatar images (each avatar exactly fits its cell)
+// render grid
 function renderGrid(){
   for(const el of gridContainer.children){
     const idx = Number(el.dataset.idx);
@@ -182,7 +168,6 @@ function renderGrid(){
         img.style.pointerEvents = 'none';
         el.appendChild(img);
       }
-      // ensure avatar fills cell exactly
       img.src = p.avatar || 'assets/decor/skull.png';
       el.title = `${p.username}${p.caption? ' — '+p.caption: ''}`;
     } else {
@@ -201,34 +186,36 @@ function updateCounters(){
   filledPixelsEl.textContent = Object.keys(pixels).length;
 }
 
-// compute mask: draw logo to tiny canvas GRID_SIZE x GRID_SIZE, luminance threshold, dilation
-// IMPORTANT: we use the exact same drawImage scale/center logic as the visible #logoImg uses (object-fit:contain),
-// but draw into GRID_SIZE x GRID_SIZE canvas so pixel mapping lines up.
+// compute mask with same scaling used by visible #logoImg (object-fit:contain + LOGO_SCALE)
 async function computeMask(threshold = 28){
   maskComputed = false; maskIndices = [];
   try {
-    // load logo as image (same source as logoImg)
     const img = await loadImageWithCors(LOGO_PATH);
     const tiny = document.createElement('canvas'); tiny.width = GRID_SIZE; tiny.height = GRID_SIZE;
-    const tctx = tiny.getContext('2d');
-    tctx.clearRect(0,0,tiny.width,tiny.height);
+    const tctx = tiny.getContext('2d'); tctx.clearRect(0,0,tiny.width,tiny.height);
 
-    // compute scaled draw size to emulate object-fit:contain (centered)
+    // compute "contain" draw then apply LOGO_SCALE so mask matches visible enlarged logo
     const ar = img.width / img.height;
     let dw = tiny.width, dh = tiny.height, dx = 0, dy = 0;
     if(ar > 1){
       dw = tiny.width;
       dh = Math.round(tiny.width / ar);
-      dy = Math.round((tiny.height - dh) / 2);
+      dy = Math.round((tiny.height - dh)/2);
     } else {
       dh = tiny.height;
       dw = Math.round(tiny.height * ar);
-      dx = Math.round((tiny.width - dw) / 2);
+      dx = Math.round((tiny.width - dw)/2);
     }
-    // draw center-fit (same logic used visually by object-fit:contain)
-    tctx.drawImage(img, dx, dy, dw, dh);
 
-    // sample pixels and compute luminance mask
+    // apply LOGO_SCALE (scale around center)
+    const scaledW = Math.round(dw * LOGO_SCALE);
+    const scaledH = Math.round(dh * LOGO_SCALE);
+    const sx = Math.round((tiny.width - scaledW)/2);
+    const sy = Math.round((tiny.height - scaledH)/2);
+
+    tctx.drawImage(img, 0, 0, img.width, img.height, sx, sy, scaledW, scaledH);
+
+    // compute luminance map
     const imgData = tctx.getImageData(0,0,tiny.width,tiny.height).data;
     const map = new Uint8Array(GRID_SIZE * GRID_SIZE);
     for(let y=0;y<GRID_SIZE;y++){
@@ -240,7 +227,7 @@ async function computeMask(threshold = 28){
       }
     }
 
-    // 1px dilation so thin strokes become clickable
+    // 1px dilation
     const dil = new Uint8Array(map);
     const neigh = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
     for(let y=0;y<GRID_SIZE;y++){
@@ -258,23 +245,20 @@ async function computeMask(threshold = 28){
 
     for(let i=0;i<dil.length;i++) if(dil[i]) maskIndices.push(i);
 
-    // sanity fallback if mask empty
     if(maskIndices.length === 0){
       const center = Math.floor((GRID_SIZE*GRID_SIZE)/2);
       maskIndices = Array.from({length: Math.min(400, GRID_SIZE*GRID_SIZE)}, (_,i)=> (center + i) % (GRID_SIZE*GRID_SIZE));
-      console.warn('Mask empty, fallback used');
+      console.warn('Mask empty -> fallback');
     }
 
     maskComputed = true;
-    renderGrid();
-    updateCounters();
-    console.log('Mask computed (aligned):', maskIndices.length);
+    renderGrid(); updateCounters();
+    console.log('Mask computed (enlarged):', maskIndices.length);
   } catch(err){
     console.warn('computeMask err', err);
     maskIndices = Array.from({length: Math.min(400, GRID_SIZE*GRID_SIZE)}, (_,i)=>i);
     maskComputed = true;
-    renderGrid();
-    updateCounters();
+    renderGrid(); updateCounters();
   }
 }
 
@@ -311,12 +295,9 @@ function fireCelebration(idx){
   if(c){ c.animate([{transform:'scale(1)'},{transform:'scale(1.2)'},{transform:'scale(1)'}],{duration:600}); c.style.boxShadow='0 0 24px rgba(0,255,120,0.25)'; setTimeout(()=> c.style.boxShadow='',900); }
 }
 
-function toggleMaskDebugClass(){
-  maskDebug = !maskDebug;
-  renderGrid();
-}
+function toggleMaskDebugClass(){ maskDebug = !maskDebug; renderGrid(); }
 
-// init wiring
+// init
 loadState();
 buildGrid();
 computeMask();
@@ -336,7 +317,7 @@ autoTune && autoTune.addEventListener('click', async ()=>{
   await computeMask(best.thr);
 });
 
-// ensure clicking overlay closes modals
+// close modals with Escape / overlay click
 document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape'){ modal && modal.classList.add('hidden'); viewModal && viewModal.classList.add('hidden'); } });
 modal && modal.addEventListener('click', (e)=> { if(e.target === modal) modal.classList.add('hidden'); });
 viewModal && viewModal.addEventListener('click', (e)=> { if(e.target === viewModal) viewModal.classList.add('hidden'); });
