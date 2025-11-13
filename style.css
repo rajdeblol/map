@@ -1,0 +1,31 @@
+:root{
+  --bg:#0f1720;--panel:#0b1220;--muted:#8b95a6;--accent:#ff3fbf;--pixel:#ffffff;--glow:#8cff8c;
+}
+*{box-sizing:border-box;font-family:Orbitron, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+html,body,#app{height:100%;background:var(--bg);color:#dfe8f5;margin:0}
+.app{display:flex;height:100vh}
+.sidebar{width:280px;padding:28px;background:linear-gradient(180deg,#071226 0%, #071727 100%);border-right:1px solid rgba(255,255,255,0.03)}
+.counter{background:rgba(255,255,255,0.02);padding:18px;border-radius:10px;margin-bottom:16px}
+.counter .label{font-size:12px;color:var(--muted);}
+.counter .big{font-size:34px;margin-top:6px}
+.hint{font-size:13px;color:var(--muted);margin-top:18px}
+.canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:32px}
+.board{position:relative;width:800px;height:800px;background:#050608;border-radius:6px;padding:14px;box-shadow:0 6px 30px rgba(0,0,0,0.6)}
+.mask-canvas{display:none}
+.grid{position:absolute;inset:14px;border:6px solid rgba(120,190,255,0.05);background:linear-gradient(180deg,#03060a,#071018);overflow:hidden}
+.cell{width:20px;height:20px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.03);float:left;transition:box-shadow .12s, transform .08s}
+.cell.hoverable{cursor:pointer}
+.cell.empty:hover{transform:scale(1.06);box-shadow:0 0 8px rgba(140,255,140,0.14)}
+.cell.filled{background:var(--pixel);box-shadow:0 0 12px rgba(140,255,140,0.2)}
+.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(4,6,10,0.6)}
+.modal.hidden{display:none}
+.modal-inner{width:420px;background:#0b1620;padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.03)}
+.close{position:absolute;right:22px;top:18px;background:transparent;border:0;color:#fff;font-size:20px}
+.modal-inner h3{margin:0 0 14px}
+.modal-inner label{display:block;color:var(--muted);font-size:13px;margin-top:8px}
+.modal-inner input, .modal-inner textarea{width:100%;padding:10px;border-radius:8px;margin-top:6px;border:1px solid rgba(255,255,255,0.04);background:#071018;color:#e9f2ff}
+.modal-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.place{background:var(--accent);border:0;color:#fff;padding:12px 18px;border-radius:10px;font-weight:700}
+
+/* responsive */
+@media (max-width:920px){.sidebar{display:none}.board{width:92vw;height:92vw}}
