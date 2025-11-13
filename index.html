@@ -1,34 +1,49 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ritualnet – Pixel-in-Knot</title>
-  <style>
-    body {font-family:Arial,Helvetica,sans-serif;background:#111;color:#fff;text-align:center;padding:20px;}
-    input, button {margin:8px;padding:10px;font-size:16px;}
-    button {background:#5a0;color:#000;border:none;cursor:pointer;}
-    #output {display:none;margin-top:30px;}
-    canvas {image-rendering:pixelated;border:2px solid #fff;margin:15px;}
-    #badge {font:bold 14px monospace;color:#ff0;text-shadow:1px 1px #000;margin:8px;}
-    #caption {background:#222;padding:12px;margin:10px;font-family:monospace;}
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ritual Pixel Portal</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <h1>Ritualnet Pixel-in-Knot</h1>
-  <p>Upload a photo → it becomes a pixel avatar **inside** the ritual knot.</p>
+  <div id="app" class="app">
+    <aside class="sidebar">
+      <div class="counter">
+        <div class="label">TOTAL PIXELS</div>
+        <div id="totalPixels" class="big">0</div>
+      </div>
+      <div class="counter">
+        <div class="label">PIXELS FILLED</div>
+        <div id="filledPixels" class="big">0</div>
+      </div>
+      <div class="hint">Click a glowing cell to place your pixel. Add Twitter username + caption.</div>
+    </aside>
 
-  <input type="text" id="username" placeholder="@yourhandle" maxlength="50"><br>
-  <input type="file" id="photo" accept="image/*"><br>
-  <button onclick="generate()">Ritualize!</button>
+    <main class="canvas-wrap">
+      <div class="board">
+        <!-- maskCanvas is used to sample the logo transparency and create the mask -->
+        <canvas id="maskCanvas" class="mask-canvas" width="800" height="800"></canvas>
+        <!-- gridContainer will contain individual cell elements -->
+        <div id="gridContainer" class="grid"></div>
+      </div>
+    </main>
+  </div>
 
-  <div id="output">
-    <h2>Your Ritualized Knot</h2>
-    <canvas id="canvas" width="256" height="256"></canvas><br>
-    <div id="badge"></div>
-    <p id="caption"></p>
-    <button onclick="download()">Download PNG</button>
-    <button onclick="copyCaption()">Copy Caption</button>
+  <!-- Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-inner">
+      <button id="closeModal" class="close">×</button>
+      <h3>Place Your Pixel</h3>
+      <label>Twitter Username</label>
+      <input id="username" placeholder="yourhandle" />
+      <label>Caption</label>
+      <textarea id="caption" placeholder="All in Ritual..."></textarea>
+      <div class="modal-actions">
+        <button id="placeBtn" class="place">Place Pixel</button>
+      </div>
+    </div>
   </div>
 
   <script src="script.js"></script>
