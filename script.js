@@ -1,18 +1,22 @@
-// static client-side version with avatar-fetch and visible logo overlay.
-// avatar fetch uses unavatar.io which proxies many providers and works around CORS in most cases.
+// Updated script.js
+// Improvements:
+// 1) Robust mask sampling: draw logo to a GRID_SIZE x GRID_SIZE canvas and sample alpha per-grid-cell
+// 2) Reliable avatar rendering: load avatar, draw to small canvas, convert to dataURL (avoids background-image CORS/redirect problems)
+// 3) Graceful fallbacks and clearer console warnings
 
-const GRID_SIZE = 40; // adjust for more/less detail
+const GRID_SIZE = 40; // grid (40x40)
 const CELL_PX = 20;
-const STORAGE_KEY = 'ritual_pixels_v1';
-const LOGO_PATH = 'assets/logo/ritual-logo.png'; // must exist
-const AVATAR_PROXY = 'https://unavatar.io/twitter/'; // usage: AVATAR_PROXY + username
+const STORAGE_KEY = 'ritual_pixels_v2';
+const LOGO_PATH = 'assets/logo/ritual-logo.png'; // ensure exists
+const AVATAR_PROXY_BASE = 'https://unavatar.io/twitter/'; // we'll append .png
 
-let pixels = {}; // idx -> {username, caption, avatar}
+let pixels = {}; // idx -> { username, caption, avatarDataUrl }
 let selectedIndex = null;
-let maskIndices = [];
+let maskIndices = []; // indices allowed to click
+let maskComputed = false;
 
 const gridContainer = document.getElementById('gridContainer');
-const maskCanvas = document.getElementById('maskCanvas');
+const maskCanvas = document.getElementById('maskCanvas'); // used for some operations but we use a dedicated small canvas too
 const modal = document.getElementById('modal');
 const usernameInput = document.getElementById('username');
 const captionInput = document.getElementById('caption');
@@ -27,11 +31,19 @@ const avatarPreview = document.getElementById('avatarPreview');
 const avatarName = document.getElementById('avatarName');
 
 function loadState(){
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if(raw) pixels = JSON.parse(raw);
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) pixels = JSON.parse(raw);
+  } catch(e) {
+    console.warn('loadState failed', e);
+  }
 }
 function saveState(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels));
+  } catch(e){
+    console.warn('saveState failed', e);
+  }
 }
 
 function buildGrid(){
@@ -52,9 +64,17 @@ function buildGrid(){
   }
 }
 
+// CLICK handler respects maskIndices; if mask not computed we temporarily allow clicks after sampling attempt
 function onCellClick(e){
   const idx = Number(e.currentTarget.dataset.idx);
-  if(!isMaskedIndex(idx)) return; // only allow logo-area clicks
+  if(!maskComputed){
+    alert('Still computing logo mask — please wait a second and try again.');
+    return;
+  }
+  if(!isMaskedIndex(idx)){
+    // not part of logo
+    return;
+  }
   if(pixels[idx]) return alert('Pixel already placed. Pick another spot.');
   selectedIndex = idx;
   usernameInput.value = '';
@@ -68,40 +88,79 @@ closeModal.addEventListener('click', close);
 
 placeBtn.addEventListener('click', ()=>{
   const u = usernameInput.value.trim();
-  if(!u) return alert('Enter X (Twitter) username or fetch avatar first.');
+  if(!u) return alert('Enter X username (no @) or fetch avatar first.');
   const c = captionInput.value.trim();
-  const avatar = avatarPreview.dataset.url || null;
-  pixels[selectedIndex] = {username: u, caption: c, avatar};
+  const avatarDataURL = avatarPreview.dataset.dataurl || null;
+  // store avatarDataURL when available; else will store null - render will fallback to remote URL
+  pixels[selectedIndex] = { username: u, caption: c, avatar: avatarDataURL };
   saveState();
   renderGrid();
   updateCounters();
   close();
 });
 
-// fetch avatar button - fetch avatar preview using unavatar proxy
+// Avatar fetch -> draw -> dataURL
 fetchAvatarBtn.addEventListener('click', async ()=>{
   const u = usernameInput.value.trim();
   if(!u) return alert('Type the X username first (no @).');
-  const url = AVATAR_PROXY + encodeURIComponent(u);
-  // quick existence check by loading the image
-  try{
-    avatarPreview.src = url + '?fallback=false'; // unavatar returns 404 if not found
-    avatarPreview.onload = ()=>{
-      avatarPreview.dataset.url = url;
+  const avatarUrl = AVATAR_PROXY_BASE + encodeURIComponent(u) + '.png';
+  // load image with crossOrigin and draw to tiny canvas
+  try {
+    const img = await loadImageWithCors(avatarUrl);
+    // draw to small square canvas (CELL_PX x CELL_PX) preserving aspect by cover-fill
+    const tmp = document.createElement('canvas');
+    tmp.width = CELL_PX;
+    tmp.height = CELL_PX;
+    const ctx = tmp.getContext('2d');
+    // cover: scale img so it fills canvas
+    const ar = img.width / img.height;
+    let sw = img.width, sh = img.height, sx = 0, sy = 0;
+    if(ar > 1){
+      // wider -> crop sides
+      sh = img.height;
+      sw = img.height * (tmp.width / tmp.height);
+      sx = Math.round((img.width - sw)/2);
+    } else {
+      // taller -> crop top/bottom
+      sw = img.width;
+      sh = img.width * (tmp.height / tmp.width);
+      sy = Math.round((img.height - sh)/2);
+    }
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, tmp.width, tmp.height);
+    const dataUrl = tmp.toDataURL('image/png');
+    avatarPreview.src = dataUrl;
+    avatarPreview.dataset.dataurl = dataUrl;
+    avatarPreview.dataset.url = avatarUrl;
+    avatarName.textContent = '@' + u;
+    avatarPreviewWrap.style.display = 'flex';
+  } catch(err) {
+    console.warn('Avatar fetch/draw failed', err);
+    // fallback: try to use remote URL directly (may work as background-image)
+    avatarPreviewWrap.style.display = 'none';
+    if(confirm('Failed to fetch avatar via proxy+canvas (CORS). Try using remote URL directly?')) {
+      // set preview to remote url to let user confirm if it loads in their browser
+      avatarPreview.src = AVATAR_PROXY_BASE + encodeURIComponent(u);
+      avatarPreview.dataset.dataurl = ''; // no dataurl
+      avatarPreview.dataset.url = AVATAR_PROXY_BASE + encodeURIComponent(u);
       avatarName.textContent = '@' + u;
       avatarPreviewWrap.style.display = 'flex';
+    } else {
+      alert('Okay — avatar not set. You can still place a pixel without avatar.');
     }
-    avatarPreview.onerror = ()=>{
-      alert('Unable to fetch avatar for that username. Either the username is invalid or the proxy blocked it.');
-      avatarPreviewWrap.style.display = 'none';
-    }
-  }catch(err){
-    console.error(err);
-    alert('Avatar fetch failed.');
   }
 });
 
-// render loop: show cells and avatar fill
+// helper to load image with crossOrigin and return a Promise<HTMLImageElement>
+function loadImageWithCors(url){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=>resolve(img);
+    img.onerror = (e)=>reject(new Error('Image load error: ' + url));
+    img.src = url + ((url.indexOf('?') === -1) ? '?v=' + Date.now() : '&v=' + Date.now());
+  });
+}
+
 function renderGrid(){
   for(const el of gridContainer.children){
     const idx = Number(el.dataset.idx);
@@ -111,6 +170,10 @@ function renderGrid(){
       el.classList.add('filled');
       if(p.avatar){
         el.style.backgroundImage = `url("${p.avatar}")`;
+        el.classList.add('filled-avatar');
+      } else if(p.avatar === '') {
+        // stored empty string means remote url is available in dataset.url (fall back)
+        el.style.backgroundImage = `url("${AVATAR_PROXY_BASE + encodeURIComponent(p.username)}")`;
         el.classList.add('filled-avatar');
       } else {
         el.style.backgroundImage = '';
@@ -137,63 +200,77 @@ function updateCounters(){
   filledPixelsEl.textContent = filled;
 }
 
-// Mask handling: sample the logo image on an offscreen canvas and compute which grid cells
-// overlap the non-transparent parts of the logo. If this fails due to CORS or path, the CSS logo overlay ensures visibility.
-function computeMask(){
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.src = LOGO_PATH + '?v=' + Date.now();
-  img.onload = ()=>{
-    const ctx = maskCanvas.getContext('2d');
-    maskCanvas.width = img.width;
-    maskCanvas.height = img.height;
-    ctx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
-    ctx.drawImage(img,0,0,maskCanvas.width,maskCanvas.height);
-    const imgData = ctx.getImageData(0,0,maskCanvas.width,maskCanvas.height).data;
+// ===== improved mask computation =====
+// Instead of sampling many pixels of a large image and mapping them into grid cells,
+// we draw the logo into a small canvas of size GRID_SIZE x GRID_SIZE and sample each pixel's alpha.
+// This gives a direct 1:1 mapping from small-canvas-pixel -> grid cell.
+async function computeMask(){
+  maskComputed = false;
+  maskIndices = [];
+  try {
+    const img = await loadImageWithCors(LOGO_PATH);
+    // tiny canvas sized GRID_SIZE x GRID_SIZE
+    const tiny = document.createElement('canvas');
+    tiny.width = GRID_SIZE;
+    tiny.height = GRID_SIZE;
+    const tctx = tiny.getContext('2d');
+    // Clear and fill transparent background
+    tctx.clearRect(0,0,tiny.width,tiny.height);
 
-    maskIndices = [];
-    for(let gy=0;gy<GRID_SIZE;gy++){
-      for(let gx=0;gx<GRID_SIZE;gx++){
-        const sx = Math.floor(gx * (maskCanvas.width / GRID_SIZE));
-        const sy = Math.floor(gy * (maskCanvas.height / GRID_SIZE));
-        const sw = Math.ceil(maskCanvas.width / GRID_SIZE);
-        const sh = Math.ceil(maskCanvas.height / GRID_SIZE);
-        let opaque = false;
-        for(let yy=0; yy<sh && !opaque; yy++){
-          for(let xx=0; xx<sw; xx++){
-            const px = ( (sy+yy) * maskCanvas.width + (sx+xx) ) * 4;
-            const a = imgData[px+3];
-            if(a > 10){ opaque = true; break; }
-          }
+    // Draw logo scaled to cover the tiny canvas while preserving aspect ratio and centered
+    const ar = img.width / img.height;
+    let dw = tiny.width, dh = tiny.height, dx = 0, dy = 0;
+    if(ar > 1){
+      // wider - fit width, full height crop vertically
+      dw = tiny.width;
+      dh = Math.round(tiny.width / ar);
+      dy = Math.round((tiny.height - dh)/2);
+    } else {
+      // taller - fit height, crop horizontally
+      dh = tiny.height;
+      dw = Math.round(tiny.height * ar);
+      dx = Math.round((tiny.width - dw)/2);
+    }
+    tctx.drawImage(img, dx, dy, dw, dh);
+
+    const d = tctx.getImageData(0,0,tiny.width,tiny.height).data;
+    for(let gy=0; gy<GRID_SIZE; gy++){
+      for(let gx=0; gx<GRID_SIZE; gx++){
+        const px = (gy * GRID_SIZE + gx) * 4;
+        const a = d[px+3];
+        if(a > 10){ // non-trivial alpha -> this cell is part of the logo
+          maskIndices.push(gy * GRID_SIZE + gx);
         }
-        if(opaque) maskIndices.push(gy*GRID_SIZE + gx);
       }
     }
+
+    if(maskIndices.length === 0){
+      console.warn('Mask computed but no opaque pixels found. Check your logo transparency and that the logo is visible when centered.');
+      // fallback: allow clicks anywhere (optional) - here we will not auto-allow; we keep mask empty to avoid mis-clicks
+    } else {
+      console.log('Mask computed. total cells in logo:', maskIndices.length);
+    }
+    maskComputed = true;
     renderGrid();
     updateCounters();
-  };
-  img.onerror = ()=>{
-    console.warn('Logo sampling failed (CORS or missing file). The grid will still show a faint logo overlay; please ensure', LOGO_PATH, 'exists and is accessible.');
-    // a fallback: treat all cells as non-mask (so none clickable) — OR you could fallback to a rectangular mask.
-    // For now, we keep maskIndices empty so no cells are clickable until logo sampling succeeds.
-  };
+  } catch(err){
+    console.warn('computeMask failed (CORS or missing file). Ensure', LOGO_PATH, 'is served from same origin or allows CORS.', err);
+    // Try to still let user proceed: mark maskComputed true but maskIndices empty (no clickable cells)
+    maskComputed = true;
+    // Optional fallback: if you'd rather allow all cells clickable in this situation, uncomment:
+    // maskIndices = Array.from({length: GRID_SIZE*GRID_SIZE}, (_,i)=>i);
+    updateCounters();
+    renderGrid();
+  }
 }
 
 function isMaskedIndex(idx){
   return maskIndices.indexOf(idx) !== -1;
 }
 
-// initialize
+// init
 loadState();
 buildGrid();
 computeMask();
 renderGrid();
 updateCounters();
-
-/*
-Notes:
-- Place your ritual logo at: assets/logo/ritual-logo.png (transparent PNG). The CSS background uses this for display.
-- Avatar fetching uses https://unavatar.io/twitter/<username>. If you prefer a different proxy or direct fetch, swap AVATAR_PROXY.
-- If the logo sampling (mask) fails due to CORS, the faint CSS logo overlay still makes the shape visible; fix by ensuring the file exists and is served from same origin or with proper CORS.
-- To make this realtime: replace localStorage load/save with DB writes and subscribe to changes to update `pixels` and call renderGrid().
-*/
