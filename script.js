@@ -1,58 +1,51 @@
-// Restrict placements to logo mask only.
-// GRID_SIZE and CELL_PX must match your CSS (default 60 / 15)
-
+// Modal-fix version: better modal close/escape/overlay handling + defensive guards
 const GRID_SIZE = 60;
 const CELL_PX = 15;
 const STORAGE_KEY = 'ritual_pixels_masked';
 const LOGO_PATH = 'assets/logo/ritual-logo.png';
 
-const MAX_PARTICIPANTS = 1000; // unused for expanding mask now; capacity = maskIndices.length
-
-let pixels = {}; // idx -> { username, caption, avatar (dataURL or remote) }
-let selectedIndex = null;
+let pixels = {}; // idx -> { username, caption, avatar }
 let maskIndices = [];
 let maskComputed = false;
 let maskDebug = false;
 
-const gridContainer = document.getElementById('gridContainer');
-const maskCanvas = document.getElementById('maskCanvas');
+// DOM helpers (defensive: some elements may be missing)
+const $ = id => document.getElementById(id);
+const gridContainer = $('gridContainer');
+const modal = $('modal');
+const closeModal = $('closeModal');
+const usernameInput = $('username');
+const captionInput = $('caption');
+const placeBtn = $('placeBtn');
+const avatarPreviewWrap = $('avatarPreviewWrap');
+const avatarPreview = $('avatarPreview');
+const avatarName = $('avatarName');
+const fetchAvatarBtn = $('fetchAvatar');
+const avatarUploadInput = $('avatarUpload');
+const removeAvatarBtn = $('removeAvatar');
 
-const modal = document.getElementById('modal');
-const usernameInput = document.getElementById('username');
-const captionInput = document.getElementById('caption');
-const placeBtn = document.getElementById('placeBtn');
-const closeModal = document.getElementById('closeModal');
-const avatarPreviewWrap = document.getElementById('avatarPreviewWrap');
-const avatarPreview = document.getElementById('avatarPreview');
-const avatarName = document.getElementById('avatarName');
-const fetchAvatarBtn = document.getElementById('fetchAvatar');
-const avatarUploadInput = document.getElementById('avatarUpload');
-const removeAvatarBtn = document.getElementById('removeAvatar');
+const viewModal = $('viewModal');
+const viewClose = $('viewClose');
+const viewAvatar = $('viewAvatar');
+const viewHandle = $('viewHandle');
+const viewPledge = $('viewPledge');
 
-const viewModal = document.getElementById('viewModal');
-const viewAvatar = document.getElementById('viewAvatar');
-const viewHandle = document.getElementById('viewHandle');
-const viewPledge = document.getElementById('viewPledge');
-const viewClose = document.getElementById('viewClose');
+const toastEl = $('toast');
+const totalPixelsEl = $('totalPixels');
+const filledPixelsEl = $('filledPixels');
 
-const celebrateEl = document.getElementById('celebrate');
-const totalPixelsEl = document.getElementById('totalPixels');
-const filledPixelsEl = document.getElementById('filledPixels');
+const toggleMaskDebugBtn = $('toggleMaskDebug');
+const autoTuneBtn = $('autoTune');
 
-const toggleMaskDebugBtn = document.getElementById('toggleMaskDebug');
-const autoTuneBtn = document.getElementById('autoTune');
-const toastEl = document.getElementById('toast');
-
-// ---------- storage ----------
 function loadState(){
   try { const raw = localStorage.getItem(STORAGE_KEY); if(raw) pixels = JSON.parse(raw); } catch(e){ console.warn('loadState failed', e); }
 }
 function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels)); } catch(e){ console.warn('saveState failed', e); } }
 
-// ---------- grid build ----------
 function buildGrid(){
-  gridContainer.style.width = (GRID_SIZE*CELL_PX)+'px';
-  gridContainer.style.height = (GRID_SIZE*CELL_PX)+'px';
+  if(!gridContainer) return;
+  gridContainer.style.width = (GRID_SIZE*CELL_PX) + 'px';
+  gridContainer.style.height = (GRID_SIZE*CELL_PX) + 'px';
   gridContainer.innerHTML = '';
   for(let y=0;y<GRID_SIZE;y++){
     for(let x=0;x<GRID_SIZE;x++){
@@ -62,72 +55,98 @@ function buildGrid(){
       cell.dataset.idx = idx;
       cell.style.width = CELL_PX + 'px';
       cell.style.height = CELL_PX + 'px';
-      cell.style.pointerEvents = 'auto';
       cell.addEventListener('click', (e)=>{
         const i = Number(e.currentTarget.dataset.idx);
-        if(pixels[i]) {
-          openViewModal(i);
-        } else {
-          // only allow placement if inside mask
+        if(pixels[i]) openViewModal(i);
+        else {
           if(isMaskedIndex(i)) openPlacementModalForIndex(i);
           else {
-            // show toast + flash nearest allowed cell (if any)
             showToast('Only cells inside the ritual logo accept placements.');
             const n = findNearestMaskIndex(i);
             if(n !== null) flashCell(n);
           }
         }
       });
-      cell.addEventListener('mousedown', (e)=> e.preventDefault());
+      cell.addEventListener('mousedown', (ev)=> ev.preventDefault());
       gridContainer.appendChild(cell);
     }
   }
 }
 
-// ---------- placement modal ----------
 function openPlacementModalForIndex(idx){
+  if(!modal) return;
   selectedIndex = idx;
-  usernameInput.value = '';
-  captionInput.value = '';
-  avatarPreviewWrap.style.display = 'none';
-  avatarPreview.dataset.dataurl = '';
-  avatarPreview.dataset.url = '';
+  usernameInput && (usernameInput.value = '');
+  captionInput && (captionInput.value = '');
+  if(avatarPreviewWrap) avatarPreviewWrap.style.display = 'none';
+  if(avatarPreview) { avatarPreview.dataset.dataurl = ''; avatarPreview.dataset.url = ''; avatarPreview.src = ''; }
   modal.classList.remove('hidden');
-  setTimeout(()=> usernameInput.focus(), 60);
+  // focus username safely
+  setTimeout(()=>{ if(usernameInput) usernameInput.focus(); }, 80);
 }
-closeModal.addEventListener('click', ()=>{ modal.classList.add('hidden'); selectedIndex = null; });
 
-// ---------- place pixel ----------
-placeBtn.addEventListener('click', ()=>{
+function closePlacementModal(){
+  if(!modal) return;
+  modal.classList.add('hidden');
+  selectedIndex = null;
+}
+closeModal && closeModal.addEventListener('click', closePlacementModal);
+
+// placement action
+let selectedIndex = null;
+placeBtn && placeBtn.addEventListener('click', ()=>{
   if(selectedIndex === null){ alert('Click an allowed cell inside the logo first.'); return; }
-  if(!isMaskedIndex(selectedIndex)){ alert('Sorry — that cell is no longer allowed.'); modal.classList.add('hidden'); selectedIndex = null; return; }
-  if(pixels[selectedIndex]){ alert('That cell is already taken.'); modal.classList.add('hidden'); selectedIndex = null; return; }
-  const u = usernameInput.value.trim();
-  const avatarData = avatarPreview.dataset.dataurl || avatarPreview.dataset.url || null;
-  if(!u && !avatarData) return alert('Enter X username or upload an avatar.');
-  const c = captionInput.value.trim();
-  const usernameStored = u || 'uploader';
-  pixels[selectedIndex] = { username: usernameStored, caption: c, avatar: avatarData || null, ts: Date.now() };
+  if(!isMaskedIndex(selectedIndex)){ alert('That cell is not allowed.'); closePlacementModal(); return; }
+  if(pixels[selectedIndex]){ alert('That cell is taken.'); closePlacementModal(); return; }
+  const username = usernameInput ? usernameInput.value.trim() : '';
+  const avatarData = avatarPreview ? (avatarPreview.dataset.dataurl || avatarPreview.dataset.url) : null;
+  if(!username && !avatarData){ alert('Provide X username or upload an avatar.'); return; }
+  const caption = captionInput ? captionInput.value.trim() : '';
+  pixels[selectedIndex] = { username: username || 'uploader', caption: caption || '', avatar: avatarData || null, ts: Date.now() };
   saveState();
   renderGrid();
   updateCounters();
-  modal.classList.add('hidden');
+  closePlacementModal();
   fireCelebration(selectedIndex);
   selectedIndex = null;
 });
 
-// ---------- view modal ----------
+// view modal
 function openViewModal(idx){
   const p = pixels[idx];
-  if(!p) return;
-  viewAvatar.src = p.avatar || 'assets/decor/skull.png';
-  viewHandle.textContent = p.username.startsWith('@') ? p.username : '@' + p.username;
-  viewPledge.textContent = p.caption || '(no pledge)';
+  if(!viewModal) return;
+  if(!p){
+    // defensive: nothing there
+    return;
+  }
+  if(viewAvatar) viewAvatar.src = p.avatar || 'assets/decor/skull.png';
+  if(viewHandle) viewHandle.textContent = p.username ? (p.username.startsWith('@') ? p.username : '@'+p.username) : '(unknown)';
+  if(viewPledge) viewPledge.textContent = p.caption || '(no pledge)';
   viewModal.classList.remove('hidden');
 }
-viewClose.addEventListener('click', ()=> { viewModal.classList.add('hidden'); });
+function closeViewModal(){ if(!viewModal) return; viewModal.classList.add('hidden'); }
+viewClose && viewClose.addEventListener('click', closeViewModal);
 
-// ---------- avatar fetch & upload ----------
+// close modals with Escape and overlay click
+document.addEventListener('keydown', (e)=>{
+  if(e.key === 'Escape'){ closeViewModal(); closePlacementModal(); }
+});
+
+// overlay click: detect clicks on modal background (close)
+function setupOverlayClicks(){
+  if(modal){
+    modal.addEventListener('click', (e)=>{
+      if(e.target === modal) closePlacementModal();
+    });
+  }
+  if(viewModal){
+    viewModal.addEventListener('click', (e)=>{
+      if(e.target === viewModal) closeViewModal();
+    });
+  }
+}
+
+// avatar fetch/upload (defensive)
 function loadImageWithCors(url){
   return new Promise((resolve,reject)=>{
     const img = new Image();
@@ -142,8 +161,7 @@ async function tryFetchAvatarToDataURL(username){
   const avatarUrl = `https://unavatar.io/twitter/${encodeURIComponent(username)}.png`;
   try {
     const img = await loadImageWithCors(avatarUrl);
-    const tmp = document.createElement('canvas');
-    tmp.width = CELL_PX; tmp.height = CELL_PX;
+    const tmp = document.createElement('canvas'); tmp.width = CELL_PX; tmp.height = CELL_PX;
     const ctx = tmp.getContext('2d');
     const ar = img.width / img.height;
     let sw = img.width, sh = img.height, sx = 0, sy = 0;
@@ -158,25 +176,16 @@ async function tryFetchAvatarToDataURL(username){
 }
 
 fetchAvatarBtn && fetchAvatarBtn.addEventListener('click', async ()=>{
-  const u = usernameInput.value.trim(); if(!u) return alert('Type the X username first (no @).');
+  if(!usernameInput) return;
+  const u = usernameInput.value.trim(); if(!u) { alert('Type the X username first.'); return; }
   const dataUrl = await tryFetchAvatarToDataURL(u);
   if(dataUrl){
-    avatarPreview.src = dataUrl;
-    avatarPreview.dataset.dataurl = dataUrl;
-    avatarPreview.dataset.url = '';
-    avatarName.textContent = '@' + u;
-    avatarPreviewWrap.style.display = 'flex';
+    if(avatarPreview){ avatarPreview.src = dataUrl; avatarPreview.dataset.dataurl = dataUrl; avatarPreview.dataset.url = ''; avatarName && (avatarName.textContent = '@' + u); avatarPreviewWrap && (avatarPreviewWrap.style.display = 'flex'); }
   } else {
     const fallback = `https://unavatar.io/twitter/${encodeURIComponent(u)}.png`;
     if(confirm('Avatar fetch to canvas failed (CORS). Use remote preview instead?')){
-      avatarPreview.src = fallback;
-      avatarPreview.dataset.dataurl = '';
-      avatarPreview.dataset.url = fallback;
-      avatarName.textContent = '@' + u;
-      avatarPreviewWrap.style.display = 'flex';
-    } else {
-      alert('You can upload instead.');
-    }
+      if(avatarPreview){ avatarPreview.src = fallback; avatarPreview.dataset.dataurl = ''; avatarPreview.dataset.url = fallback; avatarName && (avatarName.textContent = '@' + u); avatarPreviewWrap && (avatarPreviewWrap.style.display = 'flex'); }
+    } else alert('Upload instead.');
   }
 });
 
@@ -184,13 +193,15 @@ avatarUploadInput && avatarUploadInput.addEventListener('change', (e)=>{
   const f = e.target.files && e.target.files[0]; if(!f) return;
   if(!f.type.startsWith('image/')) return alert('Please upload an image file.');
   const reader = new FileReader();
-  reader.onload = ()=>{ avatarPreview.src = reader.result; avatarPreview.dataset.dataurl = reader.result; avatarPreview.dataset.url = ''; avatarName.textContent = 'Uploaded image'; avatarPreviewWrap.style.display = 'flex'; };
-  reader.onerror = ()=> alert('File read failed'); reader.readAsDataURL(f);
+  reader.onload = ()=>{ if(avatarPreview){ avatarPreview.src = reader.result; avatarPreview.dataset.dataurl = reader.result; avatarPreview.dataset.url = ''; avatarName && (avatarName.textContent = 'Uploaded image'); avatarPreviewWrap && (avatarPreviewWrap.style.display = 'flex'); } };
+  reader.onerror = ()=> alert('File read failed');
+  reader.readAsDataURL(f);
 });
-removeAvatarBtn && removeAvatarBtn.addEventListener('click', ()=>{ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; avatarPreviewWrap.style.display='none'; avatarName.textContent=''; avatarUploadInput.value=''; });
+removeAvatarBtn && removeAvatarBtn.addEventListener('click', ()=>{ if(avatarPreview){ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; } if(avatarPreviewWrap) avatarPreviewWrap.style.display='none'; if(avatarName) avatarName.textContent=''; if(avatarUploadInput) avatarUploadInput.value=''; });
 
-// ---------- render uses <img> inside cells ----------
+// ---------- render grid with img elements ----------
 function renderGrid(){
+  if(!gridContainer) return;
   for(const el of gridContainer.children){
     const idx = Number(el.dataset.idx);
     const existingImg = el.querySelector('.cell-avatar');
@@ -217,11 +228,11 @@ function renderGrid(){
 }
 
 function updateCounters(){
-  totalPixelsEl.textContent = maskIndices.length;
-  filledPixelsEl.textContent = Object.keys(pixels).length;
+  if(totalPixelsEl) totalPixelsEl.textContent = maskIndices.length;
+  if(filledPixelsEl) filledPixelsEl.textContent = Object.keys(pixels).length;
 }
 
-// ---------- mask compute (luminance + dilation) - NO expansion ----------
+// ---------- mask compute (logo only, luminance + dilation) ----------
 async function computeMask(threshold = 28){
   maskComputed = false; maskIndices = [];
   try {
@@ -247,7 +258,6 @@ async function computeMask(threshold = 28){
       }
     }
 
-    // dilation to fill thin strokes
     const dilated = new Uint8Array(map);
     const neighbors = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
     for(let gy=0; gy<GRID_SIZE; gy++){
@@ -265,117 +275,18 @@ async function computeMask(threshold = 28){
 
     for(let i=0;i<dilated.length;i++) if(dilated[i]) maskIndices.push(i);
 
-    // final sanity: if mask empty, fallback to center cluster
     if(maskIndices.length === 0){
+      // small fallback cluster so site doesn't break
       const center = Math.floor((GRID_SIZE*GRID_SIZE)/2);
-      maskIndices = Array.from({length: Math.min(500, GRID_SIZE*GRID_SIZE)}, (_,i)=> (center + i) % (GRID_SIZE*GRID_SIZE));
-      console.warn('Mask was empty; using small fallback cluster.');
+      maskIndices = Array.from({length: Math.min(400, GRID_SIZE*GRID_SIZE)}, (_,i)=> (center + i) % (GRID_SIZE*GRID_SIZE));
+      console.warn('Mask empty; using fallback cluster.');
     }
 
     maskComputed = true;
     renderGrid(); updateCounters();
-    console.log('Mask computed (logo-only) cells:', maskIndices.length);
+    console.log('Mask computed cells:', maskIndices.length);
   } catch(err){
     console.warn('computeMask failed', err);
-    // fallback small cluster
     maskIndices = Array.from({length: Math.min(400, GRID_SIZE*GRID_SIZE)}, (_,i)=>i);
     maskComputed = true;
-    renderGrid(); updateCounters();
-  }
-}
-
-function isMaskedIndex(idx){ return maskIndices.indexOf(idx) !== -1; }
-
-// ---------- helpers ----------
-function findNearestMaskIndex(idx){
-  if(!maskIndices || maskIndices.length === 0) return null;
-  const gy = Math.floor(idx / GRID_SIZE), gx = idx % GRID_SIZE;
-  let best = null, bestD = 1e9;
-  for(const m of maskIndices){
-    const my = Math.floor(m / GRID_SIZE), mx = m % GRID_SIZE;
-    const dx = mx - gx, dy = my - gy, d = dx*dx + dy*dy;
-    if(d < bestD){ bestD = d; best = m; }
-  }
-  return best;
-}
-
-function flashCell(idx){
-  const c = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
-  if(!c) return;
-  c.animate([{ boxShadow: '0 0 0 rgba(0,255,120,0.0)' }, { boxShadow: '0 0 18px rgba(0,255,120,0.28)' }, { boxShadow: '0 0 0 rgba(0,255,120,0.0)' }], { duration: 900, easing: 'ease-out' });
-}
-
-function showToast(text, ms = 1600){
-  toastEl.textContent = text;
-  toastEl.style.display = 'block';
-  toastEl.style.opacity = '1';
-  if(toastEl._t) clearTimeout(toastEl._t);
-  toastEl._t = setTimeout(()=>{ toastEl.style.opacity='0'; setTimeout(()=>toastEl.style.display='none',220); }, ms);
-}
-
-// ---------- celebration ----------
-function fireCelebration(idx){
-  const cell = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
-  if(cell){
-    cell.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.2)' }, { transform: 'scale(1)' }], { duration: 650, easing: 'ease-out' });
-    cell.style.boxShadow = '0 0 28px rgba(0,255,120,0.25)';
-    setTimeout(()=>{ cell.style.boxShadow = ''; }, 1100);
-  }
-  celebrateEl.classList.remove('hidden'); celebrateEl.setAttribute('aria-hidden','false');
-  setTimeout(()=>{ celebrateEl.classList.add('hidden'); celebrateEl.setAttribute('aria-hidden','true'); }, 2600);
-}
-
-// ---------- debug controls ----------
-toggleMaskDebugBtn && toggleMaskDebugBtn.addEventListener('click', ()=>{ maskDebug = !maskDebug; renderGrid(); });
-
-autoTuneBtn && autoTuneBtn.addEventListener('click', async ()=>{
-  const candidates = [12,18,24,30,36,42];
-  let best = {thr:24, n:0};
-  for(const t of candidates){
-    await computeMask(t);
-    const n = maskIndices.length;
-    if(n > best.n) best = {thr:t, n};
-    await new Promise(r=>setTimeout(r,80));
-  }
-  alert(`Auto-tune selected threshold ${best.thr} -> cells ${best.n}. Recomputing with that value.`);
-  await computeMask(best.thr);
-});
-
-// ---------- render (img per cell) ----------
-function renderGrid(){
-  for(const el of gridContainer.children){
-    const idx = Number(el.dataset.idx);
-    const existingImg = el.querySelector('.cell-avatar');
-    if(pixels[idx]){
-      const p = pixels[idx];
-      el.classList.remove('empty'); el.classList.add('filled');
-      let img = existingImg;
-      if(!img){
-        img = document.createElement('img');
-        img.className = 'cell-avatar';
-        img.style.pointerEvents = 'none';
-        el.appendChild(img);
-      }
-      img.src = p.avatar || 'assets/decor/skull.png';
-      el.title = `${p.username}${p.caption ? ' — ' + p.caption : ''}`;
-    } else {
-      el.classList.remove('filled'); el.classList.add('empty');
-      if(existingImg) existingImg.remove();
-      el.title = '';
-      if(isMaskedIndex(idx)) el.classList.add('hoverable'); else el.classList.remove('hoverable');
-      if(maskDebug && isMaskedIndex(idx)) el.classList.add('mask-debug'); else el.classList.remove('mask-debug');
-    }
-  }
-}
-
-function updateCounters(){
-  totalPixelsEl.textContent = maskIndices.length;
-  filledPixelsEl.textContent = Object.keys(pixels).length;
-}
-
-// ---------- init ----------
-loadState();
-buildGrid();
-computeMask();   // logo-only mask
-renderGrid();
-updateCounters();
+    renderGrid(); updateCo
