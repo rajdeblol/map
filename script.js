@@ -1,7 +1,8 @@
-// ritual final: visible CSS-grid, logo-only mask, in-cell avatars, counters
+// alignment fix: logo <img> behind grid and mask computation uses same scaling/offset.
+// GRID_SIZE and CELL_PX must match the CSS vars in index.html
 const GRID_SIZE = 60;
 const CELL_PX = 15;
-const STORAGE_KEY = 'ritual_pixels_final_grid';
+const STORAGE_KEY = 'ritual_pixels_aligned';
 const LOGO_PATH = 'assets/logo/ritual-logo.png';
 
 let pixels = {};             // idx -> { username, caption, avatar }
@@ -10,6 +11,7 @@ let maskComputed = false;
 let maskDebug = false;
 
 const gridContainer = document.getElementById('gridContainer');
+const logoImg = document.getElementById('logoImg');
 const totalPixelsEl = document.getElementById('totalPixels');
 const filledPixelsEl = document.getElementById('filledPixels');
 const toastEl = document.getElementById('toast');
@@ -43,7 +45,7 @@ function loadState(){
 }
 function saveState(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels)); } catch(e){ console.warn('saveState failed', e); } }
 
-// build grid cells
+// build grid cells sized exactly to CSS cell size
 function buildGrid(){
   gridContainer.innerHTML = '';
   gridContainer.style.setProperty('--cols', GRID_SIZE);
@@ -53,13 +55,25 @@ function buildGrid(){
     const cell = document.createElement('div');
     cell.className = 'cell';
     cell.dataset.idx = i;
+    cell.style.width = `${CELL_PX}px`;
+    cell.style.height = `${CELL_PX}px`;
     cell.addEventListener('click', onCellClick);
     cell.addEventListener('mousedown', (e)=> e.preventDefault());
     gridContainer.appendChild(cell);
   }
 }
 
-// cell click: if filled open view, else open placement only if inside mask
+// compute how the logo <img> is scaled inside .grid-wrap so mask uses same transform
+function computeLogoTransformForGrid(){
+  // gridContainer is exactly the pixel dimension we used for mask (GRID_SIZE*CELL_PX).
+  // We render the logo to that same pixel size (GRID_SIZE x GRID_SIZE) for mask computation,
+  // while the visible #logoImg uses object-fit:contain to fit inside the grid container.
+  // Therefore the mask draw should match the image rendered centered and scaled.
+  // We'll return the same scale/offset used by the mask computation (drawImage) so visual and mask align.
+  // (We do exact same drawing logic in computeMask).
+  return {}; // nothing needed here because computeMask uses identical cover logic.
+}
+
 let selectedIndex = null;
 function onCellClick(e){
   const idx = Number(e.currentTarget.dataset.idx);
@@ -81,7 +95,6 @@ function openPlacementModal(idx){
 function closePlacementModal(){ modal.classList.add('hidden'); selectedIndex = null; }
 closeModal && closeModal.addEventListener('click', closePlacementModal);
 
-// place pixel
 placeBtn && placeBtn.addEventListener('click', ()=>{
   if(selectedIndex === null){ alert('No cell selected'); return; }
   if(!isMaskedIndex(selectedIndex)){ alert('Cell not allowed'); closePlacementModal(); return; }
@@ -99,7 +112,7 @@ placeBtn && placeBtn.addEventListener('click', ()=>{
   selectedIndex = null;
 });
 
-// view modal (read-only)
+// view modal
 function openViewModal(idx){
   const p = pixels[idx]; if(!p) return;
   viewAvatar.src = p.avatar || 'assets/decor/skull.png';
@@ -109,7 +122,7 @@ function openViewModal(idx){
 }
 viewClose && viewClose.addEventListener('click', ()=> viewModal.classList.add('hidden'));
 
-// avatar fetch/upload
+// avatar fetch/upload (same robust approach)
 function loadImageWithCors(url){
   return new Promise((resolve,reject)=>{
     const img = new Image();
@@ -154,7 +167,7 @@ avatarUpload && avatarUpload.addEventListener('change', (e)=>{
 });
 removeAvatar && removeAvatar.addEventListener('click', ()=>{ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; avatarPreviewWrap.style.display='none'; avatarName.textContent=''; if(avatarUpload) avatarUpload.value=''; });
 
-// render grid and avatars
+// render grid and avatar images (each avatar exactly fits its cell)
 function renderGrid(){
   for(const el of gridContainer.children){
     const idx = Number(el.dataset.idx);
@@ -169,6 +182,7 @@ function renderGrid(){
         img.style.pointerEvents = 'none';
         el.appendChild(img);
       }
+      // ensure avatar fills cell exactly
       img.src = p.avatar || 'assets/decor/skull.png';
       el.title = `${p.username}${p.caption? ' — '+p.caption: ''}`;
     } else {
@@ -188,43 +202,55 @@ function updateCounters(){
 }
 
 // compute mask: draw logo to tiny canvas GRID_SIZE x GRID_SIZE, luminance threshold, dilation
+// IMPORTANT: we use the exact same drawImage scale/center logic as the visible #logoImg uses (object-fit:contain),
+// but draw into GRID_SIZE x GRID_SIZE canvas so pixel mapping lines up.
 async function computeMask(threshold = 28){
   maskComputed = false; maskIndices = [];
   try {
+    // load logo as image (same source as logoImg)
     const img = await loadImageWithCors(LOGO_PATH);
     const tiny = document.createElement('canvas'); tiny.width = GRID_SIZE; tiny.height = GRID_SIZE;
     const tctx = tiny.getContext('2d');
     tctx.clearRect(0,0,tiny.width,tiny.height);
 
-    // scale & center (cover)
+    // compute scaled draw size to emulate object-fit:contain (centered)
     const ar = img.width / img.height;
     let dw = tiny.width, dh = tiny.height, dx = 0, dy = 0;
-    if(ar > 1){ dw = tiny.width; dh = Math.round(tiny.width / ar); dy = Math.round((tiny.height - dh)/2); }
-    else { dh = tiny.height; dw = Math.round(tiny.height * ar); dx = Math.round((tiny.width - dw)/2); }
+    if(ar > 1){
+      dw = tiny.width;
+      dh = Math.round(tiny.width / ar);
+      dy = Math.round((tiny.height - dh) / 2);
+    } else {
+      dh = tiny.height;
+      dw = Math.round(tiny.height * ar);
+      dx = Math.round((tiny.width - dw) / 2);
+    }
+    // draw center-fit (same logic used visually by object-fit:contain)
     tctx.drawImage(img, dx, dy, dw, dh);
 
+    // sample pixels and compute luminance mask
     const imgData = tctx.getImageData(0,0,tiny.width,tiny.height).data;
     const map = new Uint8Array(GRID_SIZE * GRID_SIZE);
     for(let y=0;y<GRID_SIZE;y++){
       for(let x=0;x<GRID_SIZE;x++){
-        const p = (y*GRID_SIZE + x)*4;
+        const p = (y*GRID_SIZE + x) * 4;
         const r = imgData[p], g = imgData[p+1], b = imgData[p+2];
         const lum = 0.2126*r + 0.7152*g + 0.0722*b;
         if(lum > threshold) map[y*GRID_SIZE + x] = 1;
       }
     }
 
-    // dilation
+    // 1px dilation so thin strokes become clickable
     const dil = new Uint8Array(map);
     const neigh = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
     for(let y=0;y<GRID_SIZE;y++){
       for(let x=0;x<GRID_SIZE;x++){
         const i = y*GRID_SIZE + x;
         if(map[i] === 0){
-          for(const [dx,dy] of neigh){
-            const nx = x+dx, ny = y+dy;
-            if(nx<0||nx>=GRID_SIZE||ny<0||ny>=GRID_SIZE) continue;
-            if(map[ny*GRID_SIZE + nx] === 1){ dil[i]=1; break; }
+          for(const [dxn,dyn] of neigh){
+            const nx = x + dxn, ny = y + dyn;
+            if(nx < 0 || nx >= GRID_SIZE || ny < 0 || ny >= GRID_SIZE) continue;
+            if(map[ny*GRID_SIZE + nx] === 1){ dil[i] = 1; break; }
           }
         }
       }
@@ -232,27 +258,28 @@ async function computeMask(threshold = 28){
 
     for(let i=0;i<dil.length;i++) if(dil[i]) maskIndices.push(i);
 
-    // sanity fallback
+    // sanity fallback if mask empty
     if(maskIndices.length === 0){
-      // choose center cluster so site still usable
       const center = Math.floor((GRID_SIZE*GRID_SIZE)/2);
       maskIndices = Array.from({length: Math.min(400, GRID_SIZE*GRID_SIZE)}, (_,i)=> (center + i) % (GRID_SIZE*GRID_SIZE));
       console.warn('Mask empty, fallback used');
     }
 
     maskComputed = true;
-    renderGrid(); updateCounters();
-    console.log('Mask computed:', maskIndices.length);
+    renderGrid();
+    updateCounters();
+    console.log('Mask computed (aligned):', maskIndices.length);
   } catch(err){
     console.warn('computeMask err', err);
-    // fallback cluster
     maskIndices = Array.from({length: Math.min(400, GRID_SIZE*GRID_SIZE)}, (_,i)=>i);
     maskComputed = true;
-    renderGrid(); updateCounters();
+    renderGrid();
+    updateCounters();
   }
 }
 
 function isMaskedIndex(idx){ return maskIndices.indexOf(idx) !== -1; }
+
 function findNearestMaskIndex(idx){
   if(maskIndices.length === 0) return null;
   const gy = Math.floor(idx/GRID_SIZE), gx = idx%GRID_SIZE;
@@ -264,13 +291,13 @@ function findNearestMaskIndex(idx){
   }
   return best;
 }
+
 function flashCell(idx){
   const c = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
   if(!c) return;
   c.animate([{ boxShadow:'0 0 0 rgba(0,255,120,0.0)' }, { boxShadow:'0 0 18px rgba(0,255,120,0.28)' }, { boxShadow:'0 0 0 rgba(0,255,120,0.0)' }], { duration:900, easing:'ease-out' });
 }
 
-// toast
 let _tt = null;
 function showToast(text, ms=1400){
   if(!toastEl) return;
@@ -279,41 +306,37 @@ function showToast(text, ms=1400){
   _tt = setTimeout(()=>{ toastEl.style.opacity = '0'; setTimeout(()=> toastEl.style.display='none',180); }, ms);
 }
 
-// celebration
 function fireCelebration(idx){
   const c = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
   if(c){ c.animate([{transform:'scale(1)'},{transform:'scale(1.2)'},{transform:'scale(1)'}],{duration:600}); c.style.boxShadow='0 0 24px rgba(0,255,120,0.25)'; setTimeout(()=> c.style.boxShadow='',900); }
-  // brief overlay
-  const celebrate = document.getElementById('celebrate');
-  if(celebrate){ celebrate.classList.remove('hidden'); setTimeout(()=> celebrate.classList.add('hidden'),2200); }
 }
 
-// toggle mask debug
-toggleMaskDebug && toggleMaskDebug.addEventListener('click', ()=>{
-  maskDebug = !maskDebug; renderGrid();
-});
+function toggleMaskDebugClass(){
+  maskDebug = !maskDebug;
+  renderGrid();
+}
 
-// auto-tune (tries thresholds)
+// init wiring
+loadState();
+buildGrid();
+computeMask();
+renderGrid();
+updateCounters();
+
+toggleMaskDebug && toggleMaskDebug.addEventListener('click', toggleMaskDebugClass);
 autoTune && autoTune.addEventListener('click', async ()=>{
   const list = [10,16,22,28,34,40,48];
   let best = {thr:28, n:0};
   for(const t of list){
     await computeMask(t);
-    if(maskIndices.length > best.n){ best = {thr:t, n:maskIndices.length}; }
+    if(maskIndices.length > best.n) best = {thr:t, n:maskIndices.length};
     await new Promise(r=>setTimeout(r,60));
   }
   alert(`Auto-tune picked ${best.thr} (${best.n} cells)`);
   await computeMask(best.thr);
 });
 
-// click-outside close for modals
+// ensure clicking overlay closes modals
 document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape'){ modal && modal.classList.add('hidden'); viewModal && viewModal.classList.add('hidden'); } });
 modal && modal.addEventListener('click', (e)=> { if(e.target === modal) modal.classList.add('hidden'); });
 viewModal && viewModal.addEventListener('click', (e)=> { if(e.target === viewModal) viewModal.classList.add('hidden'); });
-
-// init
-loadState();
-buildGrid();
-computeMask();
-renderGrid();
-updateCounters();
