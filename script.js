@@ -1,155 +1,157 @@
-/* =============================================================
-   Ritualnet – Pixel photo inside the knot (first 1 000 members)
-   ============================================================= */
+// Static version: stores placed pixels in localStorage. To enable realtime sync, replace localStorage calls
+// with your DB (Firebase / Supabase) methods — see comments at bottom.
 
-async function generate() {
-  const rawUser = document.getElementById('username').value.trim().replace(/^@/, '');
-  const file = document.getElementById('photo').files[0];
-  if (!rawUser || !file) return alert('Username + photo required!');
+const GRID_SIZE = 40; // 40x40 grid
+const CELL_PX = 20;   // cell size in px (matches CSS .cell)
+const STORAGE_KEY = 'ritual_pixels_v1';
+const LOGO_PATH = 'assets/logo/ritual-logo.png'; // place your ritual logo here (transparent png)
 
-  const username = rawUser.toLowerCase();
+let pixels = {}; // mapping index -> {username, caption, color}
+let selectedIndex = null;
 
-  // ---- 1. SHA-256 seed -------------------------------------------------
-  const encoder = new TextEncoder();
-  const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(username));
-  const hash = new Uint32Array(hashBuf);
-  const memberId = (hash[1] % 1000) + 1;               // 1-1000
+const gridContainer = document.getElementById('gridContainer');
+const maskCanvas = document.getElementById('maskCanvas');
+const modal = document.getElementById('modal');
+const usernameInput = document.getElementById('username');
+const captionInput = document.getElementById('caption');
+const placeBtn = document.getElementById('placeBtn');
+const closeModal = document.getElementById('closeModal');
+const totalPixelsEl = document.getElementById('totalPixels');
+const filledPixelsEl = document.getElementById('filledPixels');
 
-  // ---- 2. Load & pixelate user photo (8×8) -----------------------------
-  const img = await loadImage(file);
-  const pixelated = pixelate(img, 8);                  // returns Uint8ClampedArray
+function loadState(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(raw) pixels = JSON.parse(raw);
+}
+function saveState(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(pixels));
+}
 
-  // ---- 3. Canvas (256×256) ---------------------------------------------
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-  const imgData = ctx.createImageData(256, 256);
-
-  // ---- 4. Draw knot (32×32) -------------------------------------------
-  const knot = getKnotMask();                         // 1 = keep, 0 = transparent
-  for (let y = 0; y < 32; y++) {
-    for (let x = 0; x < 32; x++) {
-      const knotOn = knot[y * 32 + x];
-      const col = knotOn ? [255, 255, 255, 255] : [0, 0, 0, 0];
-      for (let sy = 0; sy < 8; sy++) {
-        for (let sx = 0; sx < 8; sx++) {
-          const idx = ((y * 8 + sy) * 256 + (x * 8 + sx)) * 4;
-          imgData.data.set(col, idx);
-        }
-      }
+function buildGrid(){
+  gridContainer.style.width = (GRID_SIZE*CELL_PX)+'px';
+  gridContainer.style.height = (GRID_SIZE*CELL_PX)+'px';
+  gridContainer.innerHTML = '';
+  for(let y=0;y<GRID_SIZE;y++){
+    for(let x=0;x<GRID_SIZE;x++){
+      const idx = y*GRID_SIZE + x;
+      const cell = document.createElement('div');
+      cell.className = 'cell empty';
+      cell.dataset.idx = idx;
+      cell.style.width = CELL_PX+'px';
+      cell.style.height = CELL_PX+'px';
+      cell.addEventListener('click', onCellClick);
+      gridContainer.appendChild(cell);
     }
   }
+}
 
-  // ---- 5. Overlay pixelated photo inside knot -------------------------
-  const photoSize = 8;   // 8×8 pixelated grid
-  for (let py = 0; py < photoSize; py++) {
-    for (let px = 0; px < photoSize; px++) {
-      const knotY = 12 + py;      // offset inside knot (tweak if needed)
-      const knotX = 12 + px;
-      if (!knot[knotY * 32 + knotX]) continue;   // only where knot is white
+function onCellClick(e){
+  const idx = Number(e.currentTarget.dataset.idx);
+  if(!isMaskedIndex(idx)) return; // prevent clicks outside logo mask
+  if(pixels[idx]) return alert('Pixel already placed. Pick another spot.');
+  selectedIndex = idx;
+  usernameInput.value = '';
+  captionInput.value = '';
+  modal.classList.remove('hidden');
+}
 
-      const srcIdx = (py * photoSize + px) * 4;
-      const r = pixelated[srcIdx];
-      const g = pixelated[srcIdx + 1];
-      const b = pixelated[srcIdx + 2];
-      const a = 255;
+function close(){ modal.classList.add('hidden'); selectedIndex = null }
+closeModal.addEventListener('click', close);
 
-      for (let sy = 0; sy < 8; sy++) {
-        for (let sx = 0; sx < 8; sx++) {
-          const dy = knotY * 8 + sy;
-          const dx = knotX * 8 + sx;
-          const idx = (dy * 256 + dx) * 4;
-          imgData.data[idx]     = r;
-          imgData.data[idx + 1] = g;
-          imgData.data[idx + 2] = b;
-          imgData.data[idx + 3] = a;
-        }
-      }
+placeBtn.addEventListener('click', ()=>{
+  const u = usernameInput.value.trim();
+  if(!u) return alert('Enter Twitter username');
+  const c = captionInput.value.trim();
+  pixels[selectedIndex] = {username:u, caption:c, color:'#ffffff'};
+  saveState();
+  renderGrid();
+  updateCounters();
+  close();
+});
+
+function renderGrid(){
+  for(const el of gridContainer.children){
+    const idx = Number(el.dataset.idx);
+    if(pixels[idx]){
+      el.classList.remove('empty');
+      el.classList.add('filled');
+      el.title = `${pixels[idx].username} — ${pixels[idx].caption}`;
+    } else {
+      if(isMaskedIndex(idx)) el.classList.add('hoverable'); else el.classList.remove('hoverable');
+      el.classList.remove('filled');
+      el.classList.add('empty');
+      el.title = '';
     }
   }
-
-  // ---- 6. Render -------------------------------------------------------
-  ctx.putImageData(imgData, 0, 0);
-
-  // ---- 7. Badge & caption ---------------------------------------------
-  document.getElementById('badge').textContent = `Member #${memberId}/1000`;
-  const caption = `Congratulations @${username}, you are ritualized! #${memberId}/1000 Knot Avatar`;
-  document.getElementById('caption').textContent = caption;
-
-  document.getElementById('output').style.display = 'block';
 }
 
-/* --------------------- Helper: load image -------------------------- */
-function loadImage(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = URL.createObjectURL(file);
-  });
+function updateCounters(){
+  const total = maskIndices.length;
+  const filled = Object.keys(pixels).length;
+  totalPixelsEl.textContent = total;
+  filledPixelsEl.textContent = filled;
 }
 
-/* --------------------- Helper: pixelate to N×N --------------------- */
-function pixelate(img, size) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, size, size);
-  return ctx.getImageData(0, 0, size, size).data;
+// Mask handling: sample the logo image on an offscreen canvas and compute which grid cells
+// overlap the non-transparent parts of the logo.
+let maskIndices = [];
+function computeMask(){
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = LOGO_PATH + '?v='+Date.now();
+  img.onload = ()=>{
+    const ctx = maskCanvas.getContext('2d');
+    maskCanvas.width = img.width;
+    maskCanvas.height = img.height;
+    ctx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+    ctx.drawImage(img,0,0,maskCanvas.width,maskCanvas.height);
+    const imgData = ctx.getImageData(0,0,maskCanvas.width,maskCanvas.height).data;
+
+    // map grid cells to logo pixels
+    maskIndices = [];
+    for(let gy=0;gy<GRID_SIZE;gy++){
+      for(let gx=0;gx<GRID_SIZE;gx++){
+        // compute the area inside the image that corresponds to this grid cell
+        const sx = Math.floor(gx * (maskCanvas.width / GRID_SIZE));
+        const sy = Math.floor(gy * (maskCanvas.height / GRID_SIZE));
+        const sw = Math.ceil(maskCanvas.width / GRID_SIZE);
+        const sh = Math.ceil(maskCanvas.height / GRID_SIZE);
+        let opaque = false;
+        for(let yy=0; yy<sh && !opaque; yy++){
+          for(let xx=0; xx<sw; xx++){
+            const px = ( (sy+yy) * maskCanvas.width + (sx+xx) ) * 4;
+            const a = imgData[px+3];
+            if(a>10){ opaque = true; break; }
+          }
+        }
+        if(opaque) maskIndices.push(gy*GRID_SIZE + gx);
+      }
+    }
+    renderGrid();
+    updateCounters();
+  }
+  img.onerror = ()=>{
+    console.error('Failed to load logo. Make sure', LOGO_PATH, 'exists and is CORS-accessible.');
+    alert('Failed to load ritual logo. Put a transparent PNG at '+LOGO_PATH);
+  }
 }
 
-/* --------------------- Knot mask (32×32) --------------------------- */
-function getKnotMask() {
-  // 1 = knot line (where photo can appear), 0 = background
-  // This is a hand-crafted mask matching your knot image.
-  const str = `
-00000000000000011111111111111111
-00000000000000111111111111111111
-00000000000001111111111111111111
-00000000000011111111111111111111
-00000000000111111111111111111111
-00000000001111111111111111111111
-00000000011111111111111111111111
-00000000111111111111111111111111
-00000001111111111111111111111111
-00000011111111111111111111111111
-00000111111111111111111111111111
-00001111111111111111111111111111
-00011111111111111111111111111111
-00111111111111111111111111111111
-01111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-11111111111111111111111111111111
-01111111111111111111111111111111
-00111111111111111111111111111111
-00011111111111111111111111111111
-00001111111111111111111111111111
-00000111111111111111111111111111
-00000011111111111111111111111111
-00000001111111111111111111111111
-00000000111111111111111111111111
-00000000011111111111111111111111
-00000000001111111111111111111111
-00000000000111111111111111111111
-`.trim().replace(/\s/g, '');
-  return Uint8Array.from(str.split('').map(c => +c));
+function isMaskedIndex(idx){
+  return maskIndices.indexOf(idx) !== -1;
 }
 
-/* --------------------- Download & copy ----------------------------- */
-function download() {
-  const canvas = document.getElementById('canvas');
-  canvas.toBlob(blob => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'ritualnet-knot-pixel.png';
-    a.click();
-  });
-}
-function copyCaption() {
-  navigator.clipboard.writeText(document.getElementById('caption').textContent)
-    .then(() => alert('Caption copied!'));
-}
+// init
+loadState();
+buildGrid();
+computeMask();
+renderGrid();
+updateCounters();
+
+/*
+Realtime integration notes:
+- Replace loadState/saveState + localStorage with calls to your database.
+- Example (Firebase Realtime DB / Firestore):
+  - On init, fetch all pixels from /pixels and populate `pixels` object.
+  - Subscribe to changes (onSnapshot) to update `pixels` and call renderGrid/updateCounters when others place pixels.
+- Keep `maskIndices` logic local (derived from logo image). Only store {idx, username, caption, color, ts} on the DB.
+*/
