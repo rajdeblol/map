@@ -1,52 +1,78 @@
 :root{
-  --bg:#0f1720;--panel:#0b1220;--muted:#8b95a6;--accent:#ff3fbf;--pixel:#ffffff;--glow:#8cff8c;
+  --bg:#05060a;
+  --panel:#071018;
+  --muted:#7fbf8a;
+  --accent:#00ff88;
+  --neon:#7fff9a;
+  --card:#08121a;
 }
-*{box-sizing:border-box;font-family:Orbitron, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
-html,body,#app{height:100%;background:var(--bg);color:#dfe8f5;margin:0}
+*{box-sizing:border-box;font-family:Orbitron, system-ui, -apple-system, 'Segoe UI', Roboto, Arial}
+html,body,#app{height:100%;margin:0;background:linear-gradient(180deg,#020407 0%,#071018 100%)}
 .app{display:flex;height:100vh}
-.sidebar{width:280px;padding:28px;background:linear-gradient(180deg,#071226 0%, #071727 100%);border-right:1px solid rgba(255,255,255,0.03)}
-.counter{background:rgba(255,255,255,0.02);padding:18px;border-radius:10px;margin-bottom:16px}
-.counter .label{font-size:12px;color:var(--muted);}
-.counter .big{font-size:34px;margin-top:6px}
-.hint{font-size:13px;color:var(--muted);margin-top:18px}
+.ritual-theme .sidebar{
+  width:320px;padding:28px;background:linear-gradient(180deg,#071018 0%, #051018 100%);border-right:1px solid rgba(0,255,128,0.03);
+  color: #cfeee0;
+}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.brand .skull{width:40px;opacity:0.9;filter:drop-shadow(0 6px 18px rgba(0,255,80,0.06))}
+.brand .title{font-size:20px;font-weight:700;color:var(--neon)}
+.brand .candle{width:28px;opacity:0.9}
+
+/* counters */
+.counter{background:rgba(0,0,0,0.12);padding:18px;border-radius:12px;margin-bottom:14px;box-shadow:inset 0 0 30px rgba(0,0,0,0.4)}
+.counter .label{font-size:12px;color:rgba(200,255,200,0.5)}
+.counter .big{font-size:40px;color:var(--neon);font-weight:700;margin-top:6px}
+.hint{font-size:13px;color:rgba(180,255,200,0.6);margin-top:18px}
+.ritual-footer{font-size:12px;color:rgba(180,255,200,0.18);margin-top:20px}
+
+/* board/grid */
 .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:32px}
-.board{position:relative;width:800px;height:800px;background:#050608;border-radius:6px;padding:14px;box-shadow:0 6px 30px rgba(0,0,0,0.6)}
+.board{position:relative;width:900px;height:900px;background:#020408;border-radius:10px;padding:18px;box-shadow:0 30px 80px rgba(0,0,0,0.7)}
 .mask-canvas{display:none}
 
-/* GRID: logo overlay as faint background so the user sees it */
+/* logo overlay, larger so more pixels are inside */
 .grid{
-  position:absolute;
-  inset:14px;
-  border:6px solid rgba(120,190,255,0.05);
-  background:linear-gradient(180deg,#03060a,#071018);
-  overflow:hidden;
-  /* faint logo overlay - path must match your file */
-  background-image: url('assets/logo/ritual-logo.png');
-  background-repeat:no-repeat;
-  background-position:center;
-  background-size:70% 70%;
-  opacity:1;
-  /* we draw a dark overlay so the logo is subtle */
-  box-shadow: inset 0 0 0 9999px rgba(0,0,0,0.55);
+  position:absolute;inset:18px;border-radius:6px;padding:0;background:linear-gradient(180deg,#020409,#051019);
+  overflow:hidden;background-image: url('assets/logo/ritual-logo.png');background-repeat:no-repeat;background-position:center;background-size:82% 82%;
+  box-shadow: inset 0 0 0 9999px rgba(0,0,0,0.6);
+  border:6px solid rgba(0,255,120,0.03);
 }
 
 /* cells */
-.cell{width:20px;height:20px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.03);float:left;transition:box-shadow .12s, transform .08s;background-size:cover;background-position:center}
+.cell{width:15px;height:15px;box-sizing:border-box;border:1px solid rgba(0,255,120,0.03);float:left;transition:box-shadow .14s, transform .08s;background-size:cover;background-position:center}
 .cell.hoverable{cursor:pointer}
-.cell.empty:hover{transform:scale(1.06);box-shadow:0 0 8px rgba(140,255,140,0.14)}
-.cell.filled{background-color:var(--pixel);box-shadow:0 0 12px rgba(140,255,140,0.2);border:0}
-.cell.filled-avatar{background-color:transparent;border:0;box-shadow:0 0 18px rgba(140,255,140,0.12)}
+.cell.empty:hover{transform:scale(1.08);box-shadow:0 0 10px rgba(0,255,120,0.12)}
+.cell.filled{background-color:#dfffe8;box-shadow:0 0 14px rgba(0,255,120,0.18);border:0}
+.cell.filled-avatar{background-color:transparent;border:0;box-shadow:0 0 20px rgba(0,255,120,0.18)}
 
 /* modal */
-.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(4,6,10,0.6)}
+.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)}
 .modal.hidden{display:none}
-.modal-inner{width:460px;background:#0b1620;padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);position:relative}
+.modal-inner{width:520px;background:linear-gradient(180deg,#05121a,#041018);padding:22px;border-radius:12px;border:1px solid rgba(0,255,120,0.06);position:relative;box-shadow:0 10px 40px rgba(0,0,0,0.6)}
 .close{position:absolute;right:22px;top:18px;background:transparent;border:0;color:#fff;font-size:20px}
-.modal-inner h3{margin:0 0 14px}
-.modal-inner label{display:block;color:var(--muted);font-size:13px;margin-top:8px}
-.modal-inner input, .modal-inner textarea{width:100%;padding:10px;border-radius:8px;margin-top:6px;border:1px solid rgba(255,255,255,0.04);background:#071018;color:#e9f2ff}
+.modal-inner h3{margin:0 0 12px;color:var(--neon)}
+.modal-inner label{display:block;color:rgba(180,255,200,0.6);font-size:13px;margin-top:10px}
+.modal-inner input, .modal-inner textarea{width:100%;padding:10px;border-radius:8px;margin-top:6px;border:1px solid rgba(0,255,120,0.04);background:#06121a;color:#e9f2ff}
 .modal-actions{display:flex;justify-content:flex-end;margin-top:12px}
-.place{background:var(--accent);border:0;color:#fff;padding:12px 18px;border-radius:10px;font-weight:700}
+.place{background:linear-gradient(90deg,#00ff88,#00c77a);border:0;color:#042014;padding:10px 16px;border-radius:10px;font-weight:700}
+.small{padding:8px 10px;font-size:13px}
+.tertiary{background:#122024;border:0;color:#dfe;}
 
-/* responsive */
-@media (max-width:920px){.sidebar{display:none}.board{width:92vw;height:92vw}}
+input[type="file"] { color: #dfe8f5; background: rgba(255,255,255,0.02); padding:8px; border-radius:8px; }
+
+/* celebration overlay */
+.celebrate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);z-index:60}
+.celebrate.hidden{display:none}
+.celebrate-inner{display:flex;flex-direction:column;align-items:center;gap:8px;padding:22px;border-radius:12px;border:1px solid rgba(0,255,120,0.06);background:linear-gradient(180deg,#012012,#002411);box-shadow:0 30px 80px rgba(0,0,0,0.7)}
+.flame{width:96px;height:96px;border-radius:50%;background:radial-gradient(circle at 30% 30%, #7cff8c 0%, #00ff88 18%, rgba(0,255,120,0.05) 40%);box-shadow:0 0 40px rgba(0,255,120,0.28),0 10px 60px rgba(0,0,0,0.5);animation:flame-pulse .9s infinite}
+@keyframes flame-pulse{0%{transform:scale(0.95)}50%{transform:scale(1.07)}100%{transform:scale(0.95)}}
+.ritualised{color:#001f14;font-size:30px;background:linear-gradient(90deg,#eafff2,#b8ffd6);padding:8px 20px;border-radius:999px;font-weight:900;letter-spacing:2px;box-shadow:0 8px 30px rgba(0,255,120,0.12);transform:translateY(-16px);animation:rise 700ms ease-out}
+@keyframes rise{0%{transform:translateY(60px) scale(.9);opacity:0}100%{transform:translateY(0) scale(1);opacity:1}}
+.sub{color:rgba(200,255,210,0.8)}
+
+/* small responsive tweaks */
+@media (max-width:1000px){
+  .sidebar{display:none}
+  .board{width:92vw;height:92vw}
+  .cell{width:calc(92vw / 60);height:calc(92vw / 60)} /* responsive scaling */
+}
