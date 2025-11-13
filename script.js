@@ -1,16 +1,21 @@
-// ritual script: support up to MAX_PARTICIPANTS, upload avatar, compute mask and expand to capacity,
-// celebration animation on placement.
+// ritual script v4 (full)
+// - luminance-based mask (works with gray-on-black logos)
+// - 1px dilation, auto-expansion to MAX_PARTICIPANTS
+// - avatar fetch + upload (dataURL storage)
+// - celebration animation on placement
+// - mask debug toggle + auto-tune helper
 
-const GRID_SIZE = 60;   // grid 60x60 -> 3600 cells (good chance to contain >= 1000 mask cells)
-const CELL_PX = 15;     // matches CSS cell size
+const GRID_SIZE = 60;   // 60x60 grid
+const CELL_PX = 15;     // CSS cell size must match this
 const STORAGE_KEY = 'ritual_pixels_v4';
 const LOGO_PATH = 'assets/logo/ritual-logo.png';
-const MAX_PARTICIPANTS = 1000; // ensure capacity for 1000 participants
+const MAX_PARTICIPANTS = 1000;
 
-let pixels = {}; // idx -> { username, caption, avatarDataUrl }
+let pixels = {}; // idx -> { username, caption, avatar (dataURL) }
 let selectedIndex = null;
 let maskIndices = [];
 let maskComputed = false;
+let maskDebug = false;
 
 const gridContainer = document.getElementById('gridContainer');
 const maskCanvas = document.getElementById('maskCanvas');
@@ -30,6 +35,9 @@ const removeAvatarBtn = document.getElementById('removeAvatar');
 const avatarUploadInput = document.getElementById('avatarUpload');
 
 const celebrateEl = document.getElementById('celebrate');
+
+const toggleMaskDebugBtn = document.getElementById('toggleMaskDebug');
+const autoTuneBtn = document.getElementById('autoTune');
 
 function loadState(){
   try { const raw = localStorage.getItem(STORAGE_KEY); if(raw) pixels = JSON.parse(raw); } catch(e){ console.warn('loadState failed', e); }
@@ -85,7 +93,7 @@ placeBtn.addEventListener('click', ()=>{
   fireCelebration(selectedIndex);
 });
 
-// Avatar fetch to dataURL (with CORS-safe proxy earlier discussed). If CORS fails the fallback is upload.
+// Avatar fetch to dataURL (attempt via unavatar; may fail due to CORS -> upload fallback)
 fetchAvatarBtn.addEventListener('click', async ()=>{
   const u = usernameInput.value.trim(); if(!u) return alert('Type the X username first (no @).');
   const avatarUrl = `https://unavatar.io/twitter/${encodeURIComponent(u)}.png`;
@@ -118,7 +126,7 @@ avatarUploadInput.addEventListener('change', (e)=>{
 });
 removeAvatarBtn.addEventListener('click', ()=>{ avatarPreview.src=''; avatarPreview.dataset.dataurl=''; avatarPreview.dataset.url=''; avatarPreviewWrap.style.display='none'; avatarName.textContent=''; avatarUploadInput.value=''; });
 
-// helper
+// helper for loading image with CORS
 function loadImageWithCors(url){ return new Promise((resolve,reject)=>{ const img=new Image(); img.crossOrigin='anonymous'; img.onload=()=>resolve(img); img.onerror=()=>reject(new Error('Image load error: '+url)); img.src = url + ((url.indexOf('?')===-1)?'?v='+Date.now():'&v='+Date.now()); }); }
 
 function renderGrid(){
@@ -133,79 +141,109 @@ function renderGrid(){
     } else {
       if(isMaskedIndex(idx)) el.classList.add('hoverable'); else el.classList.remove('hoverable');
       el.classList.remove('filled'); el.classList.remove('filled-avatar'); el.classList.add('empty'); el.style.backgroundImage=''; el.style.backgroundColor='transparent'; el.title='';
+      if(maskDebug && isMaskedIndex(idx)) el.classList.add('mask-debug'); else el.classList.remove('mask-debug');
     }
   }
 }
 
 function updateCounters(){ totalPixelsEl.textContent = Math.min(MAX_PARTICIPANTS, maskIndices.length || MAX_PARTICIPANTS); filledPixelsEl.textContent = Object.keys(pixels).length; }
 
-// =============== mask computation and capacity expansion ===============
-async function computeMaskAndEnsureCapacity(){
+// ========= new luminance-based mask with dilation + expansion =========
+async function computeMaskAndEnsureCapacity(threshold = 28){
   maskComputed = false; maskIndices = [];
   try {
     const img = await loadImageWithCors(LOGO_PATH);
-    // tiny canvas GRID_SIZE x GRID_SIZE
     const tiny = document.createElement('canvas');
     tiny.width = GRID_SIZE; tiny.height = GRID_SIZE;
     const tctx = tiny.getContext('2d');
     tctx.clearRect(0,0,tiny.width,tiny.height);
 
-    // draw logo scaled & centered
+    // draw logo scaled & centered (cover-like)
     const ar = img.width / img.height;
     let dw = tiny.width, dh = tiny.height, dx = 0, dy = 0;
-    if(ar > 1){ dw = tiny.width; dh = Math.round(tiny.width / ar); dy = Math.round((tiny.height - dh)/2); }
-    else { dh = tiny.height; dw = Math.round(tiny.height * ar); dx = Math.round((tiny.width - dw)/2); }
+    if(ar > 1){
+      dw = tiny.width;
+      dh = Math.round(tiny.width / ar);
+      dy = Math.round((tiny.height - dh) / 2);
+    } else {
+      dh = tiny.height;
+      dw = Math.round(tiny.height * ar);
+      dx = Math.round((tiny.width - dw) / 2);
+    }
     tctx.drawImage(img, dx, dy, dw, dh);
 
-    const d = tctx.getImageData(0,0,tiny.width,tiny.height).data;
+    const imgData = tctx.getImageData(0,0,tiny.width,tiny.height).data;
+    const map = new Uint8Array(GRID_SIZE * GRID_SIZE);
     for(let gy=0; gy<GRID_SIZE; gy++){
       for(let gx=0; gx<GRID_SIZE; gx++){
-        const px = (gy * GRID_SIZE + gx) * 4;
-        const a = d[px+3];
-        if(a > 8) maskIndices.push(gy*GRID_SIZE + gx);
+        const p = (gy * GRID_SIZE + gx) * 4;
+        const r = imgData[p], g = imgData[p+1], b = imgData[p+2];
+        const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+        if(lum > threshold) map[gy*GRID_SIZE + gx] = 1;
       }
     }
 
-    // if logo area yields fewer cells than MAX_PARTICIPANTS, expand by adding nearest cells to center
+    // 1-pixel dilation to fill thin gaps
+    const dilated = new Uint8Array(map);
+    const neighbors = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+    for(let gy=0; gy<GRID_SIZE; gy++){
+      for(let gx=0; gx<GRID_SIZE; gx++){
+        const idx = gy*GRID_SIZE + gx;
+        if(map[idx] === 0){
+          for(const [dxn,dyn] of neighbors){
+            const nx = gx + dxn, ny = gy + dyn;
+            if(nx < 0 || nx >= GRID_SIZE || ny < 0 || ny >= GRID_SIZE) continue;
+            if(map[ny * GRID_SIZE + nx] === 1){ dilated[idx] = 1; break; }
+          }
+        }
+      }
+    }
+
+    // collect maskIndices
+    for(let i=0;i<dilated.length;i++) if(dilated[i]) maskIndices.push(i);
+
+    // expand to capacity (nearest to center)
     if(maskIndices.length < MAX_PARTICIPANTS){
       const needed = MAX_PARTICIPANTS - maskIndices.length;
-      // compute distances for all cells not already in mask
-      const centerX = (GRID_SIZE-1)/2, centerY = (GRID_SIZE-1)/2;
-      const list = [];
+      const present = new Set(maskIndices);
+      const centerX = (GRID_SIZE - 1) / 2, centerY = (GRID_SIZE - 1) / 2;
+      const distanceList = [];
       for(let gy=0; gy<GRID_SIZE; gy++){
         for(let gx=0; gx<GRID_SIZE; gx++){
           const idx = gy*GRID_SIZE + gx;
-          if(maskIndices.indexOf(idx) !== -1) continue;
-          const dx2 = gx - centerX, dy2 = gy - centerY;
-          const dist = Math.sqrt(dx2*dx2 + dy2*dy2);
-          list.push({idx, dist});
+          if(present.has(idx)) continue;
+          const dx = gx - centerX, dy = gy - centerY;
+          const d = Math.sqrt(dx*dx + dy*dy);
+          distanceList.push({ idx, d });
         }
       }
-      list.sort((a,b)=>a.dist - b.dist);
-      for(let i=0;i<needed && i<list.length;i++){
-        maskIndices.push(list[i].idx);
-      }
+      distanceList.sort((a,b)=>a.d - b.d);
+      for(let i=0;i<needed && i<distanceList.length;i++) maskIndices.push(distanceList[i].idx);
     }
 
-    if(maskIndices.length < MAX_PARTICIPANTS){
-      console.warn('After expansion mask still smaller than MAX_PARTICIPANTS - consider increasing GRID_SIZE.');
+    // last-resort fallback
+    if(maskIndices.length === 0){
+      maskIndices = Array.from({length: Math.min(GRID_SIZE*GRID_SIZE, MAX_PARTICIPANTS)}, (_,i)=>i);
+      console.warn('Mask empty -> fallback to first cells.');
     }
+
     maskComputed = true;
     renderGrid(); updateCounters();
+    console.log('Mask computed cells:', maskIndices.length);
+
   } catch(err){
     console.warn('computeMask failed', err);
-    // fallback: allow first MAX_PARTICIPANTS cells by index order
     maskIndices = Array.from({length: Math.min(GRID_SIZE*GRID_SIZE, MAX_PARTICIPANTS)}, (_,i)=>i);
-    maskComputed = true; renderGrid(); updateCounters();
+    maskComputed = true;
+    renderGrid(); updateCounters();
   }
 }
 
 function isMaskedIndex(idx){ return maskIndices.indexOf(idx) !== -1; }
 
 // ========== celebration ==========
-// show small animation, pulse cell, show ritual modal overlay
 function fireCelebration(idx){
-  // pulse the cell
+  // cell pulse
   const cell = gridContainer.querySelector(`.cell[data-idx='${idx}']`);
   if(cell){
     cell.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 700, easing: 'ease-out' });
@@ -213,12 +251,28 @@ function fireCelebration(idx){
     setTimeout(()=>{ cell.style.boxShadow = ''; }, 1000);
   }
 
-  // show big ritual overlay
+  // overlay
   celebrateEl.classList.remove('hidden');
   celebrateEl.setAttribute('aria-hidden', 'false');
-  // auto hide after 2.5s
   setTimeout(()=>{ celebrateEl.classList.add('hidden'); celebrateEl.setAttribute('aria-hidden','true'); }, 2600);
 }
+
+// ========== debug & helpers ==========
+toggleMaskDebugBtn.addEventListener('click', ()=>{ maskDebug = !maskDebug; renderGrid(); });
+autoTuneBtn.addEventListener('click', async ()=>{
+  // try thresholds in a small range and pick one with maskIndices closest to MAX_PARTICIPANTS but >= 400
+  const candidates = [12,18,24,30,36,42,50];
+  let best = {thr:24, n:0};
+  for(const t of candidates){
+    await computeMaskAndEnsureCapacity(t);
+    const n = maskIndices.length;
+    if(n > best.n && n <= MAX_PARTICIPANTS) best = {thr:t, n};
+    // small pause so UI doesn't block
+    await new Promise(r=>setTimeout(r,80));
+  }
+  alert(`Auto-tune selected threshold ${best.thr} -> cells ${best.n}. Recomputing with that value.`);
+  await computeMaskAndEnsureCapacity(best.thr);
+});
 
 // init
 loadState();
